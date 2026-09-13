@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { effectiveCommands, lexSegments, shellBasename } from "../src/shell-lexer.ts"
+import {
+  effectiveCommands,
+  lexSegments,
+  SHELL_LEXER_LIMITS,
+  ShellLexerLimitError,
+  shellBasename,
+} from "../src/shell-lexer.ts"
 
 function values(tokens: { value: string }[]): string[] {
   return tokens.map((t) => t.value)
@@ -73,5 +79,43 @@ describe("shell lexer", () => {
   test("leaves plain executables untouched", () => {
     expect(firstExecutables("grep -r foo .")).toEqual([["grep", "-r", "foo", "."]])
     expect(firstExecutables("echo hello")).toEqual([["echo", "hello"]])
+  })
+})
+
+describe("shell lexer resource bounds", () => {
+  test("rejects oversized input instead of lexing it", () => {
+    const oversized = "echo " + "a".repeat(SHELL_LEXER_LIMITS.maxInputChars)
+    expect(() => lexSegments(oversized)).toThrow(ShellLexerLimitError)
+    // Just under the limit still lexes normally.
+    expect(() => lexSegments("echo ok")).not.toThrow()
+  })
+
+  test("rejects token floods", () => {
+    const flood = new Array(SHELL_LEXER_LIMITS.maxTokens + 2).fill("a").join(" ")
+    expect(() => lexSegments(flood)).toThrow(ShellLexerLimitError)
+  })
+
+  test("bounds deeply nested env -S recursion", () => {
+    // Previously this recursed through walk() without any depth or size budget:
+    // ~3k nestings took seconds and ~10k exhausted the process heap.
+    const nested = "env -S ".repeat(10_000) + "rm -rf /"
+    const start = Date.now()
+    expect(() => {
+      for (const segment of lexSegments(nested)) effectiveCommands(segment)
+    }).toThrow(ShellLexerLimitError)
+    expect(Date.now() - start).toBeLessThan(5_000)
+  })
+
+  test("bounds deeply nested wrapper recursion", () => {
+    // Each `busybox` applet peel recurses one level deeper.
+    const nested = "busybox ".repeat(SHELL_LEXER_LIMITS.maxDepth + 5) + "rm -rf /"
+    expect(() => {
+      for (const segment of lexSegments(nested)) effectiveCommands(segment)
+    }).toThrow(ShellLexerLimitError)
+  })
+
+  test("leaves ordinary nesting well within budget", () => {
+    expect(firstExecutables("env -S 'sudo rm -rf /'")).toEqual([["rm", "-rf", "/"]])
+    expect(firstExecutables("busybox busybox rm -rf /")).toEqual([["rm", "-rf", "/"]])
   })
 })
