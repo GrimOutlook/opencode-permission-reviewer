@@ -27,6 +27,12 @@ export interface ShellToken {
 
 export interface ShellSegment {
   tokens: ShellToken[]
+  /**
+   * The separator that preceded this segment (`&&`, `||`, `|`, `&`, `;`, or a
+   * grouping paren). Absent for the first segment. Evidence providers use it
+   * to tell a pipeline producer from an unrelated command.
+   */
+  preceding?: string
 }
 
 const SEPARATORS = new Set([";", "|", "&", "\n", "\r", "(", ")"])
@@ -132,12 +138,15 @@ export function lexSegments(command: string): ShellSegment[] {
       hasToken = false
     }
   }
-  const flushSegment = () => {
+  // The separator that introduced the segment currently being built.
+  let preceding: string | undefined
+  const flushSegment = (separator: string | undefined) => {
     flushToken()
     if (tokens.length > 0) {
-      segments.push({ tokens })
+      segments.push({ tokens, ...(preceding === undefined ? {} : { preceding }) })
       tokens = []
     }
+    preceding = separator
   }
 
   let i = 0
@@ -186,7 +195,15 @@ export function lexSegments(command: string): ShellSegment[] {
       continue
     }
     if (SEPARATORS.has(c)) {
-      flushSegment()
+      // `&&` / `||` are one operator; a newline reads as `;`.
+      let separator = c
+      if ((c === "|" || c === "&") && command[i + 1] === c) {
+        separator = `${c}${c}`
+        i += 1
+      } else if (c === "\n" || c === "\r") {
+        separator = ";"
+      }
+      flushSegment(separator)
       i += 1
       continue
     }
@@ -213,7 +230,7 @@ export function lexSegments(command: string): ShellSegment[] {
     hasToken = true
     i += 1
   }
-  flushSegment()
+  flushSegment(undefined)
   return segments
 }
 

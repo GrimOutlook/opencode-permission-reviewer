@@ -3,11 +3,7 @@ import { open, realpath, stat } from "node:fs/promises"
 import { basename, isAbsolute, resolve, sep } from "node:path"
 import type { PermissionRequest } from "./types.ts"
 import { sourceCommand } from "./evidence/source-command.ts"
-
-interface Token {
-  value: string
-  operator: boolean
-}
+import { lexSegments, type ShellSegment, type ShellToken } from "./shell-lexer.ts"
 
 export interface FileEvidence {
   source: "file"
@@ -68,86 +64,24 @@ function sha256(value: string | Uint8Array): string {
   return createHash("sha256").update(value).digest("hex")
 }
 
-function shellTokens(command: string): Token[] {
-  const tokens: Token[] = []
-  let value = ""
-  let quote: "'" | '"' | undefined
-  let escaped = false
-
-  const flush = () => {
-    if (!value) return
-    tokens.push({ value, operator: false })
-    value = ""
-  }
-
-  for (let index = 0; index < command.length; index += 1) {
-    const char = command[index]!
-    if (escaped) {
-      value += char
-      escaped = false
-      continue
-    }
-    if (char === "\\" && quote !== "'") {
-      escaped = true
-      continue
-    }
-    if (quote) {
-      if (char === quote) quote = undefined
-      else value += char
-      continue
-    }
-    if (char === "'" || char === '"') {
-      quote = char
-      continue
-    }
-    if (/\s/.test(char)) {
-      flush()
-      if (char === "\n") tokens.push({ value: ";", operator: true })
-      continue
-    }
-    if (char === "|" || char === "&") {
-      flush()
-      const next = command[index + 1]
-      if (next === char) index += 1
-      tokens.push({ value: next === char ? `${char}${char}` : char, operator: true })
-      continue
-    }
-    if (char === ";") {
-      flush()
-      tokens.push({ value: ";", operator: true })
-      continue
-    }
-    value += char
-  }
-  if (escaped) value += "\\"
-  flush()
-  return tokens
-}
-
-function commandSegments(tokens: Token[]): Array<{ tokens: Token[]; preceding?: string }> {
-  const result: Array<{ tokens: Token[]; preceding?: string }> = []
-  let current: Token[] = []
-  let preceding: string | undefined
-  for (const token of tokens) {
-    if (!token.operator) {
-      current.push(token)
-      continue
-    }
-    if (current.length > 0) {
-      result.push({ tokens: current, ...(preceding === undefined ? {} : { preceding }) })
-      current = []
-    }
-    preceding = token.value
-  }
-  if (current.length > 0)
-    result.push({ tokens: current, ...(preceding === undefined ? {} : { preceding }) })
-  return result
+/*
+ * Segmentation for the evidence providers.
+ *
+ * This used to be a second, independent tokenizer, which disagreed with the
+ * emergency brake's lexer about comments, parentheses, and escaping — so the
+ * reviewer could be handed facts derived from a different reading of the
+ * command than the one the brake judged (`ssh host cmd # rm -rf /` reported
+ * remote-mutation signals from a comment). Both paths now share
+ * `lexSegments`; this layer only adapts its output shape.
+ */
+function commandSegments(command: string): ShellSegment[] {
+  return lexSegments(command)
 }
 
 export function shellCommandSegments(
   command: string,
 ): Array<{ tokens: string[]; preceding?: string }> {
-  return commandSegments(shellTokens(command)).map((segment) => ({
+  return commandSegments(command).map((segment) => ({
     tokens: segment.tokens.map((token) => token.value),
     ...(segment.preceding === undefined ? {} : { preceding: segment.preceding }),
   }))
@@ -218,7 +152,7 @@ function commandName(value: string): string {
   return basename(value)
 }
 
-function findSshIndex(tokens: Token[]): number {
+function findSshIndex(tokens: ShellToken[]): number {
   return tokens.findIndex((token) => commandName(token.value) === "ssh")
 }
 
@@ -229,7 +163,7 @@ function optionValue(token: string, option: string): string | undefined {
 }
 
 function parseSsh(
-  tokens: Token[],
+  tokens: ShellToken[],
   sshIndex: number,
 ):
   | {
@@ -303,7 +237,7 @@ function parseSsh(
   }
 }
 
-function catSource(tokens: Token[]): string | undefined {
+function catSource(tokens: ShellToken[]): string | undefined {
   if (tokens.length < 2 || commandName(tokens[0]!.value) !== "cat") return
   const values = tokens.slice(1).map((token) => token.value)
   const positional = values.filter((value) => value !== "--" && !value.startsWith("-"))
@@ -500,7 +434,7 @@ export async function enrichSshEvidence(
   const command = sourceCommand(request)
   if (!/(?:^|[\s;&|])ssh(?:\s|$)/.test(command)) return { text: "", audit: [] }
 
-  const segments = commandSegments(shellTokens(command))
+  const segments = commandSegments(command)
   const records: Array<Record<string, unknown>> = []
   const audit: SshAuditSummary[] = []
   const preflightDenials: string[] = []
@@ -570,4 +504,6 @@ export async function enrichSshEvidence(
   }
 }
 
-export const _shellTokensForTest = shellTokens
+/** Test hook: the shared tokenizer as the evidence path sees it. */
+export const _shellTokensForTest = (command: string): Array<{ value: string }> =>
+  lexSegments(command).flatMap((segment) => segment.tokens)
