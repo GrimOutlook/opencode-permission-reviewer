@@ -78,6 +78,9 @@ function hasRmFlags(tokens: ShellToken[]): { recursive: boolean; force: boolean 
   return { recursive, force }
 }
 
+/** `/*` (and `/**`) name every top-level entry: destruction of root itself. */
+const ROOT_GLOB = /^\/+\*+\/?$/
+
 /**
  * A literal target resolves to the filesystem root `/` after dropping trailing
  * `.`, `..`, and empty components. We do NOT touch variables, globs, command
@@ -87,6 +90,7 @@ function hasRmFlags(tokens: ShellToken[]): { recursive: boolean; force: boolean 
  */
 function resolvesToRoot(rawTarget: string): boolean {
   if (!rawTarget.startsWith("/")) return false
+  if (ROOT_GLOB.test(rawTarget)) return true
   const stack: string[] = []
   for (const part of rawTarget.split("/")) {
     if (part === "" || part === ".") continue
@@ -185,6 +189,28 @@ function isBlockDeviceTarget(value: string): boolean {
   return BLOCK_DEVICE_RE.test(value)
 }
 
+/**
+ * Output redirection onto a real block device (`cat /dev/zero > /dev/sda`,
+ * `… >>/dev/nvme0n1`) overwrites the disk just as `dd of=` does. The lexer
+ * keeps `>`/`>>` as ordinary tokens, either standalone or joined to their
+ * target, so both spellings are checked here.
+ */
+function hasBlockDeviceRedirect(tokens: ShellToken[]): boolean {
+  for (let i = 0; i < tokens.length; i += 1) {
+    const value = tokens[i]!.value
+    const match = /^[0-9]?(>>?)(.*)$/.exec(value)
+    if (match === null) continue
+    const target = match[2]!
+    if (target === "") {
+      const next = tokens[i + 1]?.value
+      if (next !== undefined && isBlockDeviceTarget(next)) return true
+      continue
+    }
+    if (isBlockDeviceTarget(target)) return true
+  }
+  return false
+}
+
 /** Whether a short-flag cluster (e.g. `-af`) contains a given flag letter. */
 function shortFlagClusterIncludes(value: string, letter: string): boolean {
   return (
@@ -198,6 +224,9 @@ function isDeviceDestruction(commands: ShellToken[][]): boolean {
     const base = shellBasename(effective[0]!.value)
     const args = effective.slice(1)
     const targetsBlock = args.some((t) => isBlockDeviceTarget(t.value))
+
+    // Any command whose output is redirected onto a real block device.
+    if (hasBlockDeviceRedirect(effective)) return true
 
     // mkfs / mkfs.* / mke2fs / mkswap: any real block target is destruction,
     // unless a dry-run flag is present (`-n` for mke2fs/mkfs.ext4, `-V`/`-t`
