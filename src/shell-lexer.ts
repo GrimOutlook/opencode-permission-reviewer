@@ -16,6 +16,13 @@
  * It deliberately does NOT expand variables, globs, command substitutions,
  * heredocs, or arithmetic. Those remain the model reviewer's job; the brake
  * is only a last line of defense for *unmistakable* literal destruction.
+ *
+ * Because the resolver re-lexes command strings (`sh -c`, `env -S`, …) it is
+ * mutually recursive with the tokenizer, and a crafted command can nest those
+ * forms arbitrarily deep. Every entry point is therefore bounded by
+ * `SHELL_LEXER_LIMITS` and throws `ShellLexerLimitError` when a budget is
+ * exhausted, so callers can decide how to fail. The emergency brake fails
+ * *closed* on that error (see emergency-brake.ts).
  */
 
 export interface ShellToken {
@@ -27,6 +34,32 @@ export interface ShellToken {
 
 export interface ShellSegment {
   tokens: ShellToken[]
+}
+
+/**
+ * Static analysis budgets. These are far above any legitimate command an agent
+ * would ask to run, and exist only so that adversarial input cannot turn the
+ * tokenizer/resolver pair into an unbounded memory or CPU sink.
+ */
+export const SHELL_LEXER_LIMITS = {
+  /** Longest command accepted for lexing, in characters. */
+  maxInputChars: 64 * 1024,
+  /** Most tokens a single `lexSegments` call may produce. */
+  maxTokens: 20_000,
+  /** Deepest wrapper/command-string nesting the resolver will follow. */
+  maxDepth: 32,
+  /** Total characters the resolver may re-lex across all nested expansions. */
+  maxExpandedChars: 256 * 1024,
+  /** Most effective commands a single segment may resolve to. */
+  maxEffectiveCommands: 4_096,
+} as const
+
+/** Thrown when a `SHELL_LEXER_LIMITS` budget is exhausted. */
+export class ShellLexerLimitError extends Error {
+  constructor(readonly limit: keyof typeof SHELL_LEXER_LIMITS) {
+    super(`shell lexer limit exceeded: ${limit}`)
+    this.name = "ShellLexerLimitError"
+  }
 }
 
 const SEPARATORS = new Set([";", "|", "&", "\n", "\r", "(", ")"])
@@ -116,7 +149,11 @@ function basename(exe: string): string {
  * `;`, `|`, `&`, or newline) with quote-aware, comment-aware grouping.
  */
 export function lexSegments(command: string): ShellSegment[] {
+  if (command.length > SHELL_LEXER_LIMITS.maxInputChars) {
+    throw new ShellLexerLimitError("maxInputChars")
+  }
   const segments: ShellSegment[] = []
+  let tokenCount = 0
   let tokens: ShellToken[] = []
   let value = ""
   let raw = ""
@@ -126,6 +163,10 @@ export function lexSegments(command: string): ShellSegment[] {
 
   const flushToken = () => {
     if (hasToken) {
+      tokenCount += 1
+      if (tokenCount > SHELL_LEXER_LIMITS.maxTokens) {
+        throw new ShellLexerLimitError("maxTokens")
+      }
       tokens.push({ raw, value })
       value = ""
       raw = ""
@@ -225,11 +266,36 @@ export function lexSegments(command: string): ShellSegment[] {
  */
 export function effectiveCommands(segment: ShellSegment): ShellToken[][] {
   const out: ShellToken[][] = []
-  walk(segment.tokens, out)
+  walk(segment.tokens, out, 0, { expandedChars: 0 })
   return out
 }
 
-function walk(tokens: ShellToken[], out: ShellToken[][]): void {
+/**
+ * Budget shared by one `effectiveCommands` traversal. `expandedChars` totals
+ * the text re-lexed across *every* nested command string, so neither deep
+ * nesting nor wide fan-out can amplify the work without limit. Depth is passed
+ * separately because it is per-branch, not cumulative.
+ */
+interface WalkBudget {
+  expandedChars: number
+}
+
+/** Re-lex a nested command string, charging the traversal budget first. */
+function expand(script: string, out: ShellToken[][], depth: number, budget: WalkBudget): void {
+  budget.expandedChars += script.length
+  if (budget.expandedChars > SHELL_LEXER_LIMITS.maxExpandedChars) {
+    throw new ShellLexerLimitError("maxExpandedChars")
+  }
+  for (const sub of lexSegments(script)) walk(sub.tokens, out, depth + 1, budget)
+}
+
+function walk(tokens: ShellToken[], out: ShellToken[][], depth: number, budget: WalkBudget): void {
+  if (depth > SHELL_LEXER_LIMITS.maxDepth) {
+    throw new ShellLexerLimitError("maxDepth")
+  }
+  if (out.length > SHELL_LEXER_LIMITS.maxEffectiveCommands) {
+    throw new ShellLexerLimitError("maxEffectiveCommands")
+  }
   let i = 0
   while (i < tokens.length && SHELL_KEYWORDS.has(tokens[i]!.value)) i += 1
 
@@ -253,7 +319,7 @@ function walk(tokens: ShellToken[], out: ShellToken[][]): void {
           .slice(sIndex + 2)
           .map((t) => t.value)
           .join(" ")
-        for (const sub of lexSegments(tail ? `${script} ${tail}` : script)) walk(sub.tokens, out)
+        expand(tail ? `${script} ${tail}` : script, out, depth, budget)
         return
       }
     }
@@ -283,19 +349,19 @@ function walk(tokens: ShellToken[], out: ShellToken[][]): void {
     if (SHELL_BINARIES.has(base) || SU_BINARIES.has(base)) {
       const script = findCommandString(tokens, i + 1)
       if (script !== null) {
-        for (const sub of lexSegments(script)) walk(sub.tokens, out)
+        expand(script, out, depth, budget)
         return
       }
     }
     if (base === "ssh") {
       const rest = consumeSshRemote(tokens, i + 1)
       if (rest.length > 0) {
-        for (const sub of lexSegments(rest.map((t) => t.value).join(" "))) walk(sub.tokens, out)
+        expand(rest.map((t) => t.value).join(" "), out, depth, budget)
       }
       return
     }
     if (base === "busybox") {
-      if (i + 1 < tokens.length) walk(tokens.slice(i + 1), out)
+      if (i + 1 < tokens.length) walk(tokens.slice(i + 1), out, depth + 1, budget)
       return
     }
     if (base === "chroot") {
@@ -314,7 +380,7 @@ function walk(tokens: ShellToken[], out: ShellToken[][]): void {
         }
         break
       }
-      if (j + 1 < tokens.length) walk(tokens.slice(j + 1), out)
+      if (j + 1 < tokens.length) walk(tokens.slice(j + 1), out, depth + 1, budget)
       return
     }
     out.push(tokens.slice(i))
