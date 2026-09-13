@@ -70,6 +70,65 @@ describe("capability analyzer — motivating heredoc + bun case", () => {
   })
 })
 
+describe("path normalization before classification", () => {
+  test("relative traversal out of the workspace is external, not workspace", () => {
+    const a = assess("rm -rf ../../../etc")
+    expect(a.writeEffects.externalWrite.value).toBe(true)
+    expect(a.writeEffects.workspaceWrite.value).toBe("unknown")
+  })
+
+  test("traversal that lands back inside the workspace stays workspace", () => {
+    const a = assess("rm -rf src/../dist")
+    expect(a.writeEffects.workspaceWrite.value).toBe(true)
+    expect(a.writeEffects.externalWrite.value).toBe("unknown")
+  })
+
+  test("absolute traversal through a temp root is classified by its real target", () => {
+    const a = assess("rm -rf /tmp/../etc/cron.d")
+    expect(a.writeEffects.externalWrite.value).toBe(true)
+    expect(a.writeEffects.temporaryWrite.value).toBe("unknown")
+  })
+
+  test("copying out of the workspace through traversal is an external write", () => {
+    const a = assess(`cp ${DIR}/secret ../../outside/x`)
+    expect(a.writeEffects.externalWrite.value).toBe(true)
+    expect(a.writeEffects.workspaceWrite.value).toBe("unknown")
+  })
+
+  test("copying to an absolute external destination is an external write", () => {
+    const a = assess(`cp ${DIR}/a /etc/cron.d/x`)
+    expect(a.writeEffects.externalWrite.value).toBe(true)
+  })
+
+  test("moving to a home directory outside the workspace is an external write", () => {
+    const a = assess(`mv ${DIR}/a /root/b`)
+    expect(a.writeEffects.externalWrite.value).toBe(true)
+  })
+
+  test("linking inside the workspace stays a workspace write", () => {
+    const a = assess("ln -s ../project/src/index.ts link.ts")
+    expect(a.writeEffects.workspaceWrite.value).toBe(true)
+    expect(a.writeEffects.externalWrite.value).toBe("unknown")
+  })
+
+  test("copying within the workspace stays a workspace write", () => {
+    const a = assess("cp src/a.ts src/b.ts")
+    expect(a.writeEffects.workspaceWrite.value).toBe(true)
+    expect(a.writeEffects.externalWrite.value).toBe("unknown")
+  })
+
+  test("rsync to a remote host is an external write", () => {
+    const a = assess("rsync -a dist/ deploy@host.invalid:/srv/app")
+    expect(a.writeEffects.externalWrite.value).toBe(true)
+  })
+
+  test("copying into a temp root is a temporary write", () => {
+    const a = assess("cp src/a.ts /tmp/a.ts")
+    expect(a.writeEffects.temporaryWrite.value).toBe(true)
+    expect(a.writeEffects.workspaceWrite.value).toBe("unknown")
+  })
+})
+
 describe("capability analyzer — classification matrix", () => {
   test("rm -rf /some/path → deletion + external write", () => {
     const a = assess("rm -rf /some/path")
