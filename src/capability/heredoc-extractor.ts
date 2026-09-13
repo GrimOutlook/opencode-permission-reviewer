@@ -31,7 +31,128 @@ import type { HeredocRecord } from "../types.ts"
 /** Maximum body bytes retained (bounded + redacted for prompt/audit safety). */
 const MAX_BODY_BYTES = 4096
 
-const HEREDOC_START = /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_-]*)\1(?=\s|$)/
+/**
+ * Characters that terminate an unquoted word in Bash. The heredoc delimiter is
+ * an ordinary word, so it ends at whitespace or at a shell metacharacter.
+ */
+const WORD_TERMINATORS = new Set([" ", "\t", "\n", "\r", ";", "&", "|", "<", ">", "(", ")"])
+
+interface HeredocStart {
+  /** Index of the `<<` operator in the source. */
+  index: number
+  /** Index just past the delimiter word. */
+  end: number
+  operator: "<<" | "<<-"
+  /** Delimiter after quote and backslash removal — what closes the body. */
+  delimiter: string
+  /** Delimiter exactly as written, used to rebuild the sanitized command. */
+  raw: string
+  /** Any quoting or escaping in the word disables expansion in the body. */
+  expansionDisabled: boolean
+}
+
+/**
+ * Read a heredoc delimiter word the way Bash does.
+ *
+ * The word may be unquoted (`EOF`, `1EOF`, `.py`), fully quoted (`'EOF'`,
+ * `"EOF"`), partially quoted (`"E"OF`), or backslash-escaped (`\EOF`). Quote
+ * removal is applied to get the delimiter that must appear on the closing
+ * line, and *any* quoting or escaping anywhere in the word disables parameter
+ * expansion in the body.
+ */
+function readDelimiterWord(
+  source: string,
+  start: number,
+): { value: string; raw: string; end: number; quoted: boolean } | null {
+  let index = start
+  let value = ""
+  let quoted = false
+  while (index < source.length) {
+    const character = source[index]!
+    if (character === "\\" && index + 1 < source.length) {
+      value += source[index + 1]!
+      quoted = true
+      index += 2
+      continue
+    }
+    if (character === "'" || character === '"') {
+      const close = source.indexOf(character, index + 1)
+      // An unterminated quote is not a delimiter we can trust; leave the `<<`
+      // alone rather than guessing where the body ends.
+      if (close === -1) return null
+      value += source.slice(index + 1, close)
+      quoted = true
+      index = close + 1
+      continue
+    }
+    if (WORD_TERMINATORS.has(character)) break
+    value += character
+    index += 1
+  }
+  if (value === "") return null
+  return { value, raw: source.slice(start, index), end: index, quoted }
+}
+
+/**
+ * Find the next heredoc operator at or after `from`, skipping `<<` that appears
+ * inside quoted text (`echo "a << b"`) and here-strings (`<<<`), neither of
+ * which starts a heredoc.
+ */
+function findHeredocStart(source: string, from: number): HeredocStart | null {
+  let quote: "'" | '"' | undefined
+  let index = from
+  while (index < source.length) {
+    const character = source[index]!
+    if (quote) {
+      if (character === "\\" && quote === '"' && index + 1 < source.length) {
+        index += 2
+        continue
+      }
+      if (character === quote) quote = undefined
+      index += 1
+      continue
+    }
+    if (character === "\\") {
+      index += 2
+      continue
+    }
+    if (character === "'" || character === '"') {
+      quote = character
+      index += 1
+      continue
+    }
+    if (character !== "<" || source[index + 1] !== "<") {
+      index += 1
+      continue
+    }
+    // `<<<` is a here-string, not a heredoc.
+    if (source[index + 2] === "<") {
+      index += 3
+      continue
+    }
+    let cursor = index + 2
+    let operator: "<<" | "<<-" = "<<"
+    if (source[cursor] === "-") {
+      operator = "<<-"
+      cursor += 1
+    }
+    while (source[cursor] === " " || source[cursor] === "\t") cursor += 1
+    const word = readDelimiterWord(source, cursor)
+    if (word === null) {
+      index += 2
+      continue
+    }
+    return {
+      index,
+      end: word.end,
+      operator,
+      delimiter: word.value,
+      raw: word.raw,
+      expansionDisabled: word.quoted,
+    }
+  }
+  return null
+}
 
 /** Result of extracting heredocs from a raw command. */
 export interface HeredocExtraction {
@@ -54,25 +175,28 @@ export function extractHeredocs(command: string): HeredocExtraction {
   let cursor = 0
 
   while (cursor <= command.length) {
-    const remaining = command.slice(cursor)
-    const match = HEREDOC_START.exec(remaining)
-    if (match === null) break
+    const start = findHeredocStart(command, cursor)
+    if (start === null) break
 
-    const matchStart = cursor + match.index
-    const fullMatch = match[0]
-    const operator = fullMatch.startsWith("<<-") ? "<<-" : "<<"
-    const delimiter = match[2]!
-    const expansionDisabled = match[1] !== undefined && match[1] !== ""
+    const matchStart = start.index
+    const { operator, delimiter, expansionDisabled } = start
 
     // Emit the text before the heredoc operator unchanged.
     out += command.slice(cursor, matchStart)
 
     // Find the line terminator that ends the heredoc-start line.
-    let lineEnd = matchStart + match[0].length
+    let lineEnd = start.end
     while (lineEnd < command.length && command[lineEnd] !== "\n") lineEnd += 1
 
-    // A pending output redirection on the same line (e.g. `cat > /tmp/x <<'EOF'`).
-    const outputTarget = findOutputTarget(command.slice(cursor, matchStart))
+    // The rest of the start line (a redirection, a pipe, a second heredoc
+    // operator) is real command text and must survive into the sanitized
+    // command; only the *body* is replaced.
+    const restOfLine = command.slice(start.end, lineEnd)
+
+    // A pending output redirection on the same line, before the operator
+    // (`cat > /tmp/x <<'EOF'`) or after it (`cat <<'EOF' > /tmp/x`).
+    const outputTarget =
+      findOutputTarget(command.slice(cursor, matchStart)) ?? findOutputTarget(restOfLine)
 
     // Collect the body until a line holding only the delimiter (after optional
     // leading tabs for `<<-`).
@@ -102,7 +226,7 @@ export function extractHeredocs(command: string): HeredocExtraction {
 
     // Replace the body with a placeholder; keep the line terminator structure so
     // the lexer still splits commands on newlines correctly.
-    out += `${operator}${delimiter} <HEREDOC:sha256:${sha256.slice(0, 12)}>`
+    out += `${operator}${start.raw} <HEREDOC:sha256:${sha256.slice(0, 12)}>${restOfLine}`
     cursor = endIndex
   }
 
