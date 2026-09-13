@@ -317,13 +317,31 @@ function within(path: string, root: string): boolean {
   return path === root || path.startsWith(`${root}${sep}`)
 }
 
+/** OpenCode's own scratch directory, always an approved enrichment root. */
+const TEMPORARY_ROOT = "/tmp/opencode"
+
+/**
+ * Where enrichment may read from, and where it may resolve from.
+ *
+ * These are deliberately two different things. `cwd` is the working directory
+ * a command would actually run in, which the command itself can move with
+ * `cd`; it is used only to turn a relative path into an absolute one. `roots`
+ * is the immutable trusted workspace set established before the command was
+ * parsed, and is the only thing that decides whether a file may be read.
+ */
+export interface EvidenceReadScope {
+  /** Base for resolving relative paths. May be derived from a parsed `cd`. */
+  cwd: string
+  /** Immutable approved roots. A file must resolve inside one of these. */
+  roots: string[]
+}
+
 async function includeFileOnce(
   source: string,
-  directory: string,
-  worktree: string,
+  scope: EvidenceReadScope,
   maxChars: number,
 ): Promise<FileEvidence> {
-  const resolved = resolve(directory, source)
+  const resolved = resolve(scope.cwd, source)
   if (SENSITIVE_PATH.test(resolved)) {
     return { source: "file", path: resolved, status: "blocked", reason: "sensitive path" }
   }
@@ -332,12 +350,15 @@ async function includeFileOnce(
     // Resolve the source independently so ENOENT can only mean that this
     // specific stdin file is missing, never that an auxiliary root vanished.
     const actual = await realpath(resolved)
-    const [directoryRoot, worktreeRoot, temporaryRoot] = await Promise.all([
-      realpath(directory).catch(() => resolve(directory)),
-      realpath(worktree).catch(() => resolve(worktree)),
-      realpath("/tmp/opencode").catch(() => "/tmp/opencode"),
+    // Confinement is judged against `scope.roots` — the *original* trusted
+    // workspace — never against `scope.cwd`, which a parsed `cd` can move
+    // anywhere on the filesystem. Resolving and approving against the same
+    // attacker-influenced directory would make the guard tautological.
+    const roots = await Promise.all([
+      ...scope.roots.map((root) => realpath(root).catch(() => resolve(root))),
+      realpath(TEMPORARY_ROOT).catch(() => TEMPORARY_ROOT),
     ])
-    if (![directoryRoot, worktreeRoot, temporaryRoot].some((root) => within(actual, root))) {
+    if (!roots.some((root) => within(actual, root))) {
       return {
         source: "file",
         path: resolved,
@@ -417,14 +438,13 @@ function isMissingFile(result: FileEvidence): boolean {
 
 export async function includeEvidenceFile(
   source: string,
-  directory: string,
-  worktree: string,
+  scope: EvidenceReadScope,
   maxChars: number,
 ): Promise<FileEvidence> {
-  const first = await includeFileOnce(source, directory, worktree, maxChars)
+  const first = await includeFileOnce(source, scope, maxChars)
   if (!isMissingFile(first)) return first
   await new Promise<void>((resolveDelay) => setTimeout(resolveDelay, 100))
-  return includeFileOnce(source, directory, worktree, maxChars)
+  return includeFileOnce(source, scope, maxChars)
 }
 
 function deterministicDenial(stdin: FileEvidence | undefined): string | undefined {
@@ -517,7 +537,11 @@ export async function enrichSshEvidence(
     const stdin =
       stdinPath === undefined
         ? undefined
-        : await includeEvidenceFile(stdinPath, directory, worktree, maxChars)
+        : await includeEvidenceFile(
+            stdinPath,
+            { cwd: directory, roots: [directory, worktree] },
+            maxChars,
+          )
     const remoteCommandSha256 = parsed.remoteCommand ? sha256(parsed.remoteCommand) : undefined
     const analyzedStdin = stdinSignals(stdin)
     const denial = deterministicDenial(stdin)

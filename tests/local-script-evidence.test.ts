@@ -53,6 +53,58 @@ describe("local script evidence enrichment", () => {
     expect(result.text).toContain(join(project, "task.py"))
   })
 
+  test("refuses to read a script a cd moved outside the workspace", async () => {
+    // Regression: the parsed `cd` target was passed to enrichment as *both*
+    // the resolution base and the approved root, so the confinement check was
+    // tautological and `cd /elsewhere && python pwn.py` leaked the file.
+    const workspace = await fixture()
+    const outside = await fixture()
+    await writeFile(join(outside, "pwn.py"), 'print("SENTINEL-OUTSIDE-WORKSPACE")\n')
+
+    const command = `cd ${outside} && python3 pwn.py`
+    const result = await enrichLocalScriptEvidence(
+      request({ patterns: [command], metadata: { command } }),
+      workspace,
+      workspace,
+      12_000,
+    )
+    expect(result.text).not.toContain("SENTINEL-OUTSIDE-WORKSPACE")
+    expect(result.text).toContain('"status": "blocked"')
+    expect(result.text).toContain("outside approved enrichment roots")
+  })
+
+  test("keeps the worktree readable when the workspace directory differs", async () => {
+    // The trusted root set is {directory, worktree}; a cd must not shrink it
+    // either, so a worktree-relative script still resolves.
+    const worktree = await fixture()
+    const directory = join(worktree, "sub")
+    await mkdir(directory)
+    await writeFile(join(worktree, "build.py"), 'print("worktree script")\n')
+    const command = `cd ${worktree} && python3 build.py`
+    const result = await enrichLocalScriptEvidence(
+      request({ patterns: [command], metadata: { command } }),
+      directory,
+      worktree,
+      12_000,
+    )
+    expect(result.text).toContain("worktree script")
+  })
+
+  test("refuses an absolute script path outside the workspace after a cd", async () => {
+    const workspace = await fixture()
+    const outside = await fixture()
+    await writeFile(join(outside, "pwn.py"), 'print("SENTINEL-ABSOLUTE-OUTSIDE")\n')
+    const command = `cd ${outside} && python3 ${join(outside, "pwn.py")}`
+    const result = await enrichLocalScriptEvidence(
+      request({ patterns: [command], metadata: { command } }),
+      workspace,
+      workspace,
+      12_000,
+    )
+    expect(result.text).not.toContain("SENTINEL-ABSOLUTE-OUTSIDE")
+    expect(result.text).toContain('"status": "blocked"')
+  })
+
   test("surfaces local filesystem, database, URL, and dynamic execution signals", async () => {
     const directory = await fixture()
     const script = join(directory, "mutate.py")
