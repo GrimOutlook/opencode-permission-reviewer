@@ -9,6 +9,13 @@ name: release
 #   - Actions → General → "Workflow permissions" allows id-token writes
 #     (required for npm --provenance).
 #
+# Release authorization: a pushed tag is only a request to release. The job
+# refuses to build or publish unless the tag commit is reachable from the
+# protected release branch (`main`), so only reviewed, merged commits can be
+# published. Protect `v*` tags in repo settings (Rules → Tag rulesets) so that
+# only maintainers can create them; the reachability check is the in-workflow
+# backstop that holds even if that protection is missing.
+#
 # Versioning: tags matching `vX.Y.Z` publish to the `latest` dist-tag; tags
 # matching `vX.Y.Z-<pre>` (e.g. `v1.0.0-rc.1`) publish to the `next`
 # dist-tag so prereleases do not replace the stable release.
@@ -31,8 +38,28 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # Full history so the CHANGELOG extraction can locate the version.
+          # Full history so the CHANGELOG extraction can locate the version
+          # and the tag-reachability check can walk to the release branch.
           fetch-depth: 0
+
+      # A pushed `v*` tag is attacker-controllable if tag protection is ever
+      # missing or bypassed, and the version check below only compares the tag
+      # name with package.json — contents from any commit would pass it. Refuse
+      # to build or publish anything that is not already on the protected
+      # release branch, so only reviewed, merged commits can be released.
+      - name: Verify tag commit is reachable from the release branch
+        env:
+          RELEASE_BRANCH: main
+        run: |
+          set -euo pipefail
+          tag_commit=$(git rev-list -n 1 "${GITHUB_REF_NAME}")
+          git fetch --no-tags origin "+refs/heads/${RELEASE_BRANCH}:refs/remotes/origin/${RELEASE_BRANCH}"
+          if ! git merge-base --is-ancestor "$tag_commit" "refs/remotes/origin/${RELEASE_BRANCH}"; then
+            echo "::error::Tag ${GITHUB_REF_NAME} ($tag_commit) is not reachable from ${RELEASE_BRANCH}."
+            echo "Only commits merged into the protected release branch may be released."
+            exit 1
+          fi
+          echo "Tag ${GITHUB_REF_NAME} resolves to $tag_commit, reachable from ${RELEASE_BRANCH}."
 
       - name: Read tag metadata
         id: meta
