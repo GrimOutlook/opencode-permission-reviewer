@@ -92,8 +92,8 @@
     "check": "bun run format:check && bun run lint && bun run typecheck && bun run test && bun run build"
   },
   "dependencies": {
-    "@opentui/core": "0.5.9",
-    "@opentui/solid": "0.5.9",
+    "@opentui/core": "0.5.11",
+    "@opentui/solid": "0.5.11",
     "solid-js": "1.9.12"
   }
 }
