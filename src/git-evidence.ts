@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process"
+import { realpath } from "node:fs/promises"
 import { promisify } from "node:util"
-import { basename, resolve } from "node:path"
+import { basename, resolve, sep } from "node:path"
 import type { PermissionRequest } from "./types.ts"
 import { sourceCommand } from "./evidence/source-command.ts"
 import { shellCommandSegmentsWithDirectory } from "./ssh-evidence.ts"
@@ -122,6 +123,30 @@ function plannedActions(command: string, directory: string): PlannedGitActions {
   return result
 }
 
+function within(path: string, root: string): boolean {
+  return path === root || path.startsWith(`${root}${sep}`)
+}
+
+/**
+ * Whether the resolved Git execution directory is still inside the trusted
+ * workspace.
+ *
+ * The directory is derived from the command's own `cd` and `git -C` values, so
+ * it is attacker-influenced. Enrichment is documented as workspace-only: even
+ * though the subprocess is read-only (argv, hooks disabled, no optional locks,
+ * no prompts, 2s timeout), running it against an arbitrary local repository
+ * discloses that repository's root, branch and working-tree status to the
+ * reviewer provider. Compare real paths on both sides so a symlink inside the
+ * workspace cannot point the check at an outside repository.
+ */
+async function withinApprovedRoots(directory: string, roots: string[]): Promise<boolean> {
+  const actual = await realpath(directory).catch(() => resolve(directory))
+  const resolvedRoots = await Promise.all(
+    roots.map((root) => realpath(root).catch(() => resolve(root))),
+  )
+  return resolvedRoots.some((root) => within(actual, root))
+}
+
 function boundedList(values: string[], max = 200): { values: string[]; omitted: number } {
   return {
     values: values.slice(0, max),
@@ -198,6 +223,7 @@ export async function enrichGitEvidence(
   request: PermissionRequest,
   directory: string,
   maxChars: number,
+  worktree: string = directory,
 ): Promise<GitEnrichmentResult> {
   if (request.permission !== "bash") return { text: "" }
   const command = sourceCommand(request)
@@ -217,6 +243,19 @@ export async function enrichGitEvidence(
     }
   }
   const gitDirectory = planned.executionDirectory
+  if (!(await withinApprovedRoots(gitDirectory, [directory, worktree]))) {
+    return {
+      text: `GIT_STATE_ANALYSIS\n${JSON.stringify(
+        {
+          status: "unavailable",
+          reason: `Git directory is outside the approved workspace roots: ${gitDirectory}`,
+          planned,
+        },
+        null,
+        2,
+      ).slice(0, maxChars)}`,
+    }
+  }
 
   const [root, status] = await Promise.all([
     runGit(gitDirectory, ["rev-parse", "--show-toplevel"]),
