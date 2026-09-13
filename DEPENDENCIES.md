@@ -48,9 +48,10 @@ reviewer does not have to re-derive it.
   packages (now at 0.5.11). `@opentui/solid` still peers on `solid-js@1.9.12`,
   which is unchanged here.
 - `bun audit` reports no advisory against any `@opentui/*` package. The two low
-  advisories it does report (`@babel/core` sourceMappingURL arbitrary file read,
-  `esbuild` dev-server arbitrary file read on Windows) predate this update and
-  are unrelated to it; neither is reachable from the shipped plugin at runtime.
+  advisories it did report at the time (`@babel/core` sourceMappingURL arbitrary
+  file read, `esbuild` dev-server arbitrary file read on Windows) predated this
+  update and were unrelated to it; both are now closed by the `overrides` block
+  described under "Transitive advisory overrides" below.
 - Full gate green on 0.5.11 (format, lint, typecheck, 598 tests, build).
 
 Outcome: updated.
@@ -172,11 +173,11 @@ a prerelease by version string only: `1.0.0-beta.2` has been Babel's published
 here so the enforcement test can distinguish "known and assessed" from "new and
 unreviewed".
 
-`@opentui/solid` also pulls `@babel/core` itself into the runtime closure, which
-is where the low-severity `@babel/core` sourceMappingURL advisory surfaces in
-`bun audit`. It is not reachable from the reviewer's decision path — the TUI
-overlay is compiled by OpenCode's host pipeline — but it is part of what a
-consumer installs, so it is listed rather than filtered out.
+`@opentui/solid` also pulls `@babel/core` itself into the runtime closure. That
+is where the low-severity `@babel/core` sourceMappingURL advisory used to
+surface in `bun audit`; it is now closed by an override (see "Transitive
+advisory overrides"). The package remains part of what a consumer installs, so
+it is listed rather than filtered out.
 
 ### Monitoring expectations
 
@@ -196,3 +197,40 @@ consumer installs, so it is listed rather than filtered out.
   forces a fresh review rather than passing silently);
 - the runtime dependency closure reaches a prerelease that is not one of the
   documented ones above.
+
+## Transitive advisory overrides
+
+Two low-severity advisories were reachable only through packages pinned by
+something upstream, so no bump of a dependency we declare could close them:
+
+| Package       | Advisory                                                                 | Affected             | How it enters                                     |
+| ------------- | ------------------------------------------------------------------------ | -------------------- | ------------------------------------------------- |
+| `@babel/core` | [GHSA-4x5r-pxfx-6jf8](https://github.com/advisories/GHSA-4x5r-pxfx-6jf8) | `<= 7.29.0`          | runtime closure, via `@opentui/solid` (exact pin) |
+| `esbuild`     | [GHSA-g7r4-m6w7-qqqr](https://github.com/advisories/GHSA-g7r4-m6w7-qqqr) | `>= 0.27.3 < 0.28.1` | development only, via `tsup` > `bundle-require`   |
+
+Both are closed by an `overrides` block in `package.json`: `@babel/core` at
+`7.29.7` and `esbuild` at `0.28.2`.
+
+The `@babel/core` override deliberately stays inside the `7.x` major that
+`@opentui/solid` was built against. That is the same reasoning as the Effect
+exception above, applied in the other direction: overriding a dependency's own
+framework pin across a major would trade a low-severity advisory for a real
+compatibility risk in code a consumer installs, but raising the patch level
+inside the chosen major does not. `esbuild` crosses a `0.x` minor (`tsup`
+declares `^0.27.0`) because there is no fixed `0.27.x`; the build exercises
+esbuild directly, so `bun run build` is the check that this is safe.
+
+### How this is enforced
+
+`tests/dependency-overrides.test.ts` fails when:
+
+- either override is missing, or is itself inside its advisory's affected range;
+- any resolution in `bun.lock` — nested copies included — is a vulnerable
+  version, so a later bump cannot quietly reintroduce one;
+- the `@babel/core` override leaves `7.x`;
+- an override masks a package declared directly in `package.json`, which should
+  be bumped in place where a reader can see it.
+
+An override is a last resort, not a maintenance strategy. When upstream ships a
+release that pins a fixed version itself, drop the corresponding entry and let
+the real dependency graph govern again.

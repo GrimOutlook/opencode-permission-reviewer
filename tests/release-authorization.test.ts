@@ -25,10 +25,14 @@ describe("release tag authorization", () => {
   })
 
   test("authorization runs before dependency install, build, and publish", () => {
-    const guard = workflow.indexOf("Verify tag commit is reachable")
+    // Order the *steps*, not the file: the header comments mention the publish
+    // token and the pinning policy, and matching those would make the ordering
+    // assertion depend on prose.
+    const steps = workflow.slice(workflow.indexOf("\n    steps:"))
+    const guard = steps.indexOf("Verify tag commit is reachable")
     expect(guard).toBeGreaterThan(-1)
     for (const later of ["bun install", "bun run check", "npm publish"]) {
-      expect(workflow.indexOf(later)).toBeGreaterThan(guard)
+      expect(steps.indexOf(later)).toBeGreaterThan(guard)
     }
   })
 
