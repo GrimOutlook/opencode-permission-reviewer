@@ -242,6 +242,15 @@ For safety, project config cannot redirect `auditPath`, grant `actorProfiles`,
 downgrade a global `enforcementMode: "enforce"`, or relax a trusted
 `escalationMode: "deny"` / failure-mode deny knob.
 
+A checked-out repository is untrusted input, so the project layer also cannot
+choose **who reviews it or on what evidence**. These fields are honored only
+from global or inline config: `model`, `variant`, `outputFormat`, `policy`,
+`retainReviewSessions`, `auditPath`, `actorProfiles`. Evidence and reliability
+budgets — `timeoutMs`, `maxContextChars`, `maxPartChars`, `maxEnrichmentChars`,
+`maxIntentChars`, `transcriptMessages`, `intentMessages`, `historyMessages`,
+`maxSessionDepth`, `maxParentSessions` — may be **raised** by a project (more
+evidence) but never lowered.
+
 #### Interactive vs autonomous
 
 | Mode                        | Config                     | Behavior                                                                |
