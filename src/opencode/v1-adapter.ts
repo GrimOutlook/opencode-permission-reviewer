@@ -2,6 +2,7 @@ import { encodeUiStatus } from "../ui-protocol.ts"
 import type { OpenCodeCapabilities, PermissionReplyInput, RawTransport } from "./adapter.ts"
 import { probeCapabilities } from "./capability-detection.ts"
 import { createReplyTransport } from "./reply-transport.ts"
+import { assertHostContract } from "./host-contract.ts"
 import { assertV1Host } from "./v2-adapter.ts"
 import type { OpenCodeClientLike, RuntimeContext } from "./types.ts"
 
@@ -31,13 +32,19 @@ interface ReplyOptions {
 
 /**
  * Build the V1 {@link RuntimeContext} against OpenCode's authenticated raw
- * transport. Probes the host client's capabilities, refuses a v2-generation
- * host, and routes every permission reply through the isolated reply transport
+ * transport. Refuses a v2-generation host, verifies the host contract (fail
+ * closed on a host that cannot answer permission requests), probes the host
+ * client's capabilities, and routes every permission reply through the
+ * isolated reply transport
  * (which throws when no safe reply channel exists, so the plugin never runs
  * with an unauthenticated client).
  */
 export function createV1Adapter(input: V1ServerInput, logger?: Logger): RuntimeContext {
   assertV1Host(input.client)
+  // Fail closed on any host in the declared peer range that does not provide
+  // the surfaces the reviewer depends on. See host-contract.ts for why the gate
+  // probes surfaces rather than a self-reported version.
+  assertHostContract(input.client, logger)
   const transport = (input.client as { _client?: RawTransport })._client
   if (!transport?.post) {
     throw new Error(
