@@ -29,3 +29,42 @@ permission system, your model provider's safety layers, or good OS-level
 hygiene. A determinedly adversarial agent may still attempt to mislead the
 reviewer; the deterministic emergency brake and the untrusted-evidence prompt
 mitigate but cannot fully eliminate that risk.
+
+## Runtime trust boundary: the OpenCode host
+
+The published bundle externalizes `@opencode-ai/plugin`, `@opencode-ai/sdk`,
+`@opentui/*`, and `solid-js` (see `tsup.config.ts`). The reviewer therefore
+runs against **the host installation on the consumer's machine**, not against a
+copy it ships. `package.json` declares the supported host range
+(`@opencode-ai/plugin` `>=1.18.11 <2`); `bun.lock` pins only this repository's
+development graph and constrains nothing at a consumer's site.
+
+Consequences we accept and manage:
+
+- A future host release inside the declared range can change event shapes,
+  transport behavior, or permission semantics without a new reviewer release.
+- The v1 server client handed to plugins exposes no version surface, and a
+  version a host asserts about itself is weaker evidence than the surfaces it
+  actually has.
+
+So the gate is a **contract probe**, not a version comparison
+(`src/opencode/host-contract.ts`). At startup the plugin enumerates every host
+surface it depends on and classifies it:
+
+- **Required** — the authenticated transport and a permission reply channel.
+  Without these the reviewer cannot answer a permission request, and an
+  unanswered request is a hang rather than a safe default, so startup **fails
+  closed** with a message naming the missing surface and the supported range.
+- **Degraded** — session lineage (`session.get`) and the status overlay
+  (`tui.publish`). Their absence costs evidence or presentation only; the
+  reviewer keeps working and records what was missing in debug output.
+
+The probe reads properties and never invokes host methods, so it is safe to run
+before any permission is handled. `assertV1Host` additionally refuses a
+v2-generation client outright.
+
+`tests/host-contract.test.ts` checks the contract against the host the
+development graph actually resolves to, so a host upgrade that removes a
+surface fails CI here rather than a consumer's startup. When the supported
+range changes, update `SUPPORTED_HOST_RANGE` and `VERIFIED_HOST_VERSION`
+alongside `package.json` — the tests assert they agree.
