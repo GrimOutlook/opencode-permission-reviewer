@@ -177,6 +177,21 @@ describe("deterministic emergency brake", () => {
     expect(emergencyBrakeReason(request({ metadata: { command } }))).toBeUndefined()
   })
 
+  test("fails closed on commands too large or too nested to analyze", () => {
+    // The `env -S` resolver re-lexes its tail, so nesting used to recurse
+    // without bound: ~10k forms exhausted the process heap, and any thrown
+    // failure skipped the brake entirely instead of stopping the command.
+    const nested = "env -S ".repeat(10_000) + "rm -rf /"
+    const start = Date.now()
+    const reason = emergencyBrakeReason(request({ metadata: { command: nested } }))
+    expect(reason).toBeDefined()
+    expect(reason).toContain("Emergency brake")
+    expect(Date.now() - start).toBeLessThan(5_000)
+
+    const oversized = "echo " + "a".repeat(200_000)
+    expect(emergencyBrakeReason(request({ metadata: { command: oversized } }))).toBeDefined()
+  })
+
   test("does not apply bash heuristics to other permission types", () => {
     expect(
       emergencyBrakeReason(request({ permission: "edit", metadata: { command: "rm -rf /" } })),
