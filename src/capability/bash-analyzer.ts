@@ -5,6 +5,7 @@ import type {
   Provenanced,
   Redirection,
 } from "../types.ts"
+import { posix } from "node:path"
 import { shellBasename, type ShellToken } from "../shell-lexer.ts"
 
 /*
@@ -282,38 +283,67 @@ function hasWriteRedirect(redirections: Redirection[]): boolean {
   return redirections.some((r) => r.operator === ">" || r.operator === ">>" || r.operator === "&>")
 }
 
-/** Classify a path target as temporary, workspace, or external. */
+/** Roots whose contents are scratch space rather than the workspace. */
+const TEMPORARY_ROOTS = ["/tmp/", "/var/tmp/", "/dev/shm/"]
+
+/** Whether `candidate` is `root` itself or sits underneath it. */
+function contains(root: string, candidate: string): boolean {
+  const normalized = posix.normalize(root).replace(/\/+$/, "") || "/"
+  if (candidate === normalized) return true
+  return candidate.startsWith(normalized === "/" ? "/" : `${normalized}/`)
+}
+
+/** Whether a target names a remote host (`host:path`, `user@host:path`). */
+function isRemoteTarget(target: string): boolean {
+  return /^[A-Za-z0-9._-]{2,}(?:@[A-Za-z0-9._-]+)?:(?!\\)/.test(target)
+}
+
+/**
+ * Classify a path target as temporary, workspace, or external.
+ *
+ * Relative targets are resolved against `directory` and normalized *before*
+ * classification, so traversal cannot pass as a workspace path: `../../etc`
+ * is external, not "relative, therefore inside the working directory".
+ */
 function classifyPath(
   target: string,
   directory: string,
   worktree: string,
 ): { temporary: boolean; workspace: boolean; external: boolean } {
-  if (!target || target.startsWith("&"))
-    return { temporary: false, workspace: false, external: false }
-  let temp = false
-  let external = false
-  let workspace = false
-  if (
-    target.startsWith("/tmp/") ||
-    target.startsWith("/var/tmp/") ||
-    target.startsWith("/dev/shm/") ||
-    target === "/dev/null"
-  ) {
-    temp = true
-  } else if (target.startsWith("/") || /^[A-Za-z]:[\\/]/.test(target)) {
-    // Absolute path outside the known temp roots.
-    if (target === directory || target === worktree || target.startsWith(`${worktree}/`)) {
-      workspace = true
-    } else if (target.startsWith(`${directory}/`) || target === directory) {
-      workspace = true
-    } else {
-      external = true
-    }
-  } else {
-    // Relative path resolves inside the working directory.
-    workspace = true
+  const none = { temporary: false, workspace: false, external: false }
+  if (!target || target.startsWith("&")) return none
+  // Windows-style absolute paths are not POSIX paths; compare them literally.
+  if (/^[A-Za-z]:[\\/]/.test(target)) {
+    const inside = target === directory || target === worktree
+    return { temporary: false, workspace: inside, external: !inside }
   }
-  return { temporary: temp, workspace, external }
+  const resolved = posix.normalize(target.startsWith("/") ? target : posix.join(directory, target))
+  if (resolved === "/dev/null" || TEMPORARY_ROOTS.some((root) => resolved.startsWith(root))) {
+    return { temporary: true, workspace: false, external: false }
+  }
+  if (contains(directory, resolved) || contains(worktree, resolved)) {
+    return { temporary: false, workspace: true, external: false }
+  }
+  return { temporary: false, workspace: false, external: true }
+}
+
+/**
+ * Operands of a copy/move/link command, with flags dropped. The destination is
+ * the last one (`cp a b dest/`, `ln -s target linkname`).
+ */
+function mutationOperands(tokens: ShellToken[]): string[] {
+  const out: string[] = []
+  let endOfFlags = false
+  for (let i = 1; i < tokens.length; i += 1) {
+    const value = tokens[i]!.value
+    if (!endOfFlags && value === "--") {
+      endOfFlags = true
+      continue
+    }
+    if (!endOfFlags && value.startsWith("-") && value.length > 1) continue
+    out.push(value)
+  }
+  return out
 }
 
 function destinationFromTokens(tokens: ShellToken[]): string[] {
@@ -472,7 +502,21 @@ export function analyzeCapability(
         if (cls.external) externalWrite = true
       }
     }
-    if (FILE_MUTATION_TOOLS.has(base)) workspaceWrite = true
+    if (FILE_MUTATION_TOOLS.has(base)) {
+      // cp/mv/ln/rsync write to their destination operand, which is not
+      // necessarily inside the workspace — classify it instead of assuming.
+      const destination = mutationOperands(cmd).at(-1)
+      if (destination === undefined) {
+        workspaceWrite = true
+      } else if (isRemoteTarget(destination)) {
+        externalWrite = true
+      } else {
+        const cls = classifyPath(destination, directory, worktree)
+        if (cls.temporary) temporaryWrite = true
+        if (cls.workspace) workspaceWrite = true
+        if (cls.external) externalWrite = true
+      }
+    }
     if (DELETION_TOOLS.has(base)) {
       deletion = true
       let anyTarget = false
