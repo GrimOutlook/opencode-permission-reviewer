@@ -124,7 +124,14 @@ export async function enrichLocalScriptEvidence(
             status: "unavailable" as const,
             reason: segment.directoryReason ?? "working directory is unresolved",
           }
-        : await includeEvidenceFile(path, segment.directory ?? directory, worktree, maxChars)
+        : // `segment.directory` follows the command's `cd`, so it only resolves
+          // the path. The approved roots stay the original workspace/worktree,
+          // which the command cannot move.
+          await includeEvidenceFile(
+            path,
+            { cwd: segment.directory ?? directory, roots: [directory, worktree] },
+            maxChars,
+          )
     records.push(recordFor(interpreter, file.path, file))
   }
 
