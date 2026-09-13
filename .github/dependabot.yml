@@ -1,6 +1,8 @@
 version: 2
 updates:
   # npm dependencies — weekly checks, grouped to reduce PR noise.
+  # Exact-pinned runtime packages (@opentui/*, solid-js) carry native artifacts;
+  # DEPENDENCIES.md records the review checklist and the outcome for each bump.
   # PRs target `dev` (the integration branch) instead of `main` so Dependabot
   # compares against the up-to-date manifest and does not re-open PRs for
   # versions already integrated.
