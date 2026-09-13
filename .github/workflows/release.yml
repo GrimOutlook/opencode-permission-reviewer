@@ -103,6 +103,48 @@ jobs:
             --access public \
             --tag "${{ steps.meta.outputs.dist_tag }}"
 
+      # npm repacks the repository at publish time (publishing the pre-packed
+      # tarball would forfeit provenance), so the artifact inspected above and
+      # the artifact consumers install come from two separate packs. Close that
+      # gap: download what the registry actually serves and require identical
+      # contents. See scripts/compare-package-tarballs.sh.
+      - name: Verify the published artifact matches the inspected artifact
+        run: |
+          set -euo pipefail
+          version="${{ steps.meta.outputs.version }}"
+          name=$(node -p "require('./package.json').name")
+          spec="$name@$version"
+
+          # The registry needs a moment to serve a freshly published version.
+          for attempt in 1 2 3 4 5 6; do
+            if npm view "$spec" dist.integrity >/dev/null 2>&1; then break; fi
+            echo "Waiting for $spec to appear on the registry (attempt $attempt)..."
+            sleep 10
+          done
+
+          integrity=$(npm view "$spec" dist.integrity)
+          tarball_url=$(npm view "$spec" dist.tarball)
+          echo "Published integrity: $integrity"
+
+          mkdir -p published
+          curl -fsSL "$tarball_url" -o published/published.tgz
+
+          inspected=$(ls artifacts/*.tgz)
+          ./scripts/compare-package-tarballs.sh \
+            "$inspected" \
+            published/published.tgz \
+            artifacts/published-contents-sha256.txt
+
+          # Record what was actually published alongside the release artifacts
+          # so the claim stays verifiable after the fact.
+          {
+            echo "package: $spec"
+            echo "registry-integrity: $integrity"
+            echo "registry-tarball: $tarball_url"
+            echo "verified-files: $(wc -l < artifacts/published-contents-sha256.txt)"
+          } > artifacts/published-artifact.txt
+          cat artifacts/published-artifact.txt
+
       # Generate a CycloneDX SBOM from the extracted tarball contents.
       - name: Generate SBOM
         run: |
@@ -146,5 +188,7 @@ jobs:
           gh release upload "$tag" \
             artifacts/*.tgz \
             artifacts/checksums-sha256.txt \
+            artifacts/published-artifact.txt \
+            artifacts/published-contents-sha256.txt \
             artifacts/sbom.cdx.json \
             --clobber
