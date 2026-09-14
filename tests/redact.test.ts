@@ -119,6 +119,30 @@ describe("redactSecrets — credential formats", () => {
     expect(redactSecrets(`token ${opaque}`)).not.toContain(opaque)
   })
 
+  test("redacts hyphen-containing bearer and opaque tokens", () => {
+    // Regression: the class was written `[A-Za-z0-9._~+/-=]`, where `/-=` is a
+    // range rather than a literal hyphen, so redaction stopped at the first
+    // hyphen and leaked the token suffix.
+    const hyphenated = "abcdefgh-SYNTHETICTAIL9999999999"
+    for (const scheme of ["Bearer", "bearer", "Basic", "Token"]) {
+      const out = redactSecrets(`Authorization: ${scheme} ${hyphenated}`)
+      expect(out).not.toContain("SYNTHETICTAIL")
+      expect(out).not.toContain(hyphenated)
+      expect(out).toContain(`${scheme} [REDACTED:${scheme.toLowerCase()}]`)
+    }
+
+    // Multi-hyphen opaque token: every segment must be consumed.
+    const multi = "aaaabbbb-cccc-dddd-eeee-SYNTHETICTAIL1234"
+    const out = redactSecrets(`Bearer ${multi}`)
+    expect(out).not.toContain("SYNTHETICTAIL")
+    expect(out).toBe("Bearer [REDACTED:bearer]")
+
+    // The `=` and `+` characters the broken range happened to cover must still
+    // be part of the token.
+    const padded = "YWJjZGVm+Z2hpamts-bW5vcHFy=="
+    expect(redactSecrets(`Basic ${padded}`)).toBe("Basic [REDACTED:basic]")
+  })
+
   test("redacts Cookie / Set-Cookie headers", () => {
     expect(redactSecrets("Cookie: session=abcdefgh1234567890")).not.toContain("abcdefgh")
     expect(redactSecrets("Set-Cookie: sid=abcdefgh1234567890")).not.toContain("abcdefgh")
