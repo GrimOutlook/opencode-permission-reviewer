@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, open, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import {
@@ -158,8 +158,13 @@ describe("audit file privacy", () => {
 
   test("tightens an existing world-readable audit file before appending", async () => {
     const auditPath = join(directory, "audit.jsonl")
-    await writeFile(auditPath, "", { mode: 0o644 })
-    await chmod(auditPath, 0o644)
+    // Force the world-readable mode regardless of the runner's umask, which
+    // would otherwise mask the bits off `writeFile`'s create mode. Do it
+    // through the open handle rather than by path: an fchmod cannot land on a
+    // different file than the one just created.
+    const seeded = await open(auditPath, "w", 0o644)
+    await seeded.chmod(0o644)
+    await seeded.close()
     const writeAudit = createAuditWriter({ ...DEFAULT_CONFIG, audit: true, auditPath })!
     await writeAudit(record({ requestID: "per_tighten" }))
     expect((await stat(auditPath)).mode & 0o777).toBe(0o600)
