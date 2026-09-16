@@ -106,6 +106,48 @@ describe("deterministic emergency brake", () => {
     "parted /dev/sda rm 1",
     "dd if=/dev/zero of=/dev/disk/by-id/ata-SAMSUNG",
     "dd if=/dev/urandom of=/dev/loop0",
+    // Exec wrappers beyond the original privilege set.
+    "timeout 10 rm -rf /",
+    "timeout -s KILL 5 rm -rf /",
+    "timeout --signal=KILL 5s rm -rf /",
+    "xargs rm -rf /",
+    "xargs -I{} rm -rf /",
+    "systemd-run rm -rf /",
+    "systemd-run -u wipe rm -rf /",
+    "systemd-run --unit=wipe rm -rf /",
+    "strace rm -rf /",
+    "strace -o /tmp/trace.log rm -rf /",
+    "ltrace rm -rf /",
+    "flock /tmp/lock rm -rf /",
+    "flock /tmp/lock -c 'rm -rf /'",
+    "chrt 99 rm -rf /",
+    "taskset 0x1 rm -rf /",
+    "taskset -c 0-3 rm -rf /",
+    "nsenter -t 1 -m rm -rf /",
+    "firejail rm -rf /",
+    "proxychains rm -rf /",
+    "eatmydata rm -rf /",
+    "watch -n 1 rm -rf /",
+    "script -c 'rm -rf /' /dev/null",
+    'script -c "rm -rf /" /dev/null',
+    "nice -n 5 timeout 10 rm -rf /",
+    "sudo timeout 10 rm -rf /",
+    // Clustered short options with a value (`-Hu root` == `-H -u root`).
+    "sudo -Hu root rm -rf /",
+    "sudo -uroot rm -rf /",
+    "sudo -Hu root -- rm -rf /",
+    "doas -u root rm -rf /",
+    // Globbed root: `/*` names every top-level entry.
+    "rm -rf /*",
+    'rm -rf "/*"',
+    "sudo rm -rf /*",
+    "rm -rf /**",
+    // Output redirection onto a real block device.
+    "cat /dev/zero > /dev/sda",
+    "cat /dev/zero >/dev/sda",
+    "cat /dev/urandom >> /dev/nvme0n1",
+    "sh -c 'cat /dev/zero > /dev/sda'",
+    "sudo dd if=/dev/urandom bs=1M > /dev/sdb",
   ])("rejects unmistakable critical command: %s", (command) => {
     expect(emergencyBrakeReason(request({ metadata: { command } }))).toBeString()
   })
@@ -173,8 +215,43 @@ describe("deterministic emergency brake", () => {
     "shred /tmp/secret.txt",
     "shred -u ~/notes.txt",
     "dd if=/dev/zero of=/tmp/file bs=1M count=10",
+    // Wrapped but harmless commands must still pass.
+    "timeout 10 rm -rf ./dist",
+    "timeout 30 bun test",
+    "xargs rm -rf",
+    "strace -o /tmp/trace.log ls -la",
+    "taskset -c 0-3 bun test",
+    "chrt 99 ./build.sh",
+    "flock /tmp/lock ./build.sh",
+    "watch -n 5 git status",
+    "script -c 'ls -la' /tmp/typescript",
+    "systemd-run --unit=build bun run build",
+    // Redirection to non-block targets is ordinary.
+    "cat /dev/zero > /dev/null",
+    "echo hello > /tmp/out",
+    "bun run build >> build.log",
+    'echo "cat /dev/zero > /dev/sda"',
+    // Globs that are not root.
+    "rm -rf ./*",
+    "rm -rf /tmp/*",
+    "rm -rf dist/*",
   ])("does not overreach on non-critical command: %s", (command) => {
     expect(emergencyBrakeReason(request({ metadata: { command } }))).toBeUndefined()
+  })
+
+  test("fails closed on commands too large or too nested to analyze", () => {
+    // The `env -S` resolver re-lexes its tail, so nesting used to recurse
+    // without bound: ~10k forms exhausted the process heap, and any thrown
+    // failure skipped the brake entirely instead of stopping the command.
+    const nested = "env -S ".repeat(10_000) + "rm -rf /"
+    const start = Date.now()
+    const reason = emergencyBrakeReason(request({ metadata: { command: nested } }))
+    expect(reason).toBeDefined()
+    expect(reason).toContain("Emergency brake")
+    expect(Date.now() - start).toBeLessThan(5_000)
+
+    const oversized = "echo " + "a".repeat(200_000)
+    expect(emergencyBrakeReason(request({ metadata: { command: oversized } }))).toBeDefined()
   })
 
   test("does not apply bash heuristics to other permission types", () => {

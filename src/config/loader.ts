@@ -36,12 +36,52 @@ export function projectConfigPath(directory: string): string {
   return join(directory, ".opencode", "permission-reviewer.jsonc")
 }
 
+/**
+ * Fields only trusted (global/inline) config may set. A checked-out repository
+ * must not be able to choose which model reviews its own permission requests,
+ * rewrite the safety policy that is inserted into the reviewer prompt, change
+ * how the decision is transported, redirect the audit trail, delegate actor
+ * profiles, or keep reviewer sessions (which hold the evidence) around.
+ */
+const TRUSTED_ONLY_FIELDS = [
+  "model",
+  "variant",
+  "outputFormat",
+  "policy",
+  "retainReviewSessions",
+  "auditPath",
+  "actorProfiles",
+] as const
+
+/**
+ * Evidence and reliability budgets. A project may only ask for MORE — shrinking
+ * them hides the authorization or action detail the reviewer decides on, and a
+ * short timeout forces the failure path. `resolveConfig` still clamps every
+ * value to its hard maximum, so raising is bounded.
+ */
+const EVIDENCE_BUDGET_FIELDS = [
+  "timeoutMs",
+  "maxContextChars",
+  "maxPartChars",
+  "maxEnrichmentChars",
+  "maxIntentChars",
+  "transcriptMessages",
+  "intentMessages",
+  "historyMessages",
+  "maxSessionDepth",
+  "maxParentSessions",
+] as const
+
 /** Load and merge config from global, project, and inline sources.
  *
  * Precedence (lowest to highest): builtin defaults → global → project → inline.
  * The trust boundary ensures project config can only TIGHTEN security-sensitive
  * fields, never weaken them (lower confidence thresholds, widen risk cells,
- * disable audit, set trusted repository trust, or enable enforcement).
+ * disable audit, set trusted repository trust, or enable enforcement). Fields
+ * that decide *who reviews* and *on what evidence* — the reviewer model and
+ * variant, the decision transport, the policy prompt, session retention, the
+ * audit destination, actor delegation — are trusted-only, and evidence budgets
+ * may only be raised.
  *
  * When no global or project files exist (the common case), the result is
  * byte-identical to calling `resolveConfig(inlineOptions)` directly. */
@@ -85,22 +125,28 @@ function mergeWithTrustBoundary(
     delete clamped.audit
   }
 
-  // auditPath: only trusted global/inline config may choose the audit
-  // destination. A repository must never be able to redirect or silence the
-  // audit trail by pointing it at /dev/null or a path it controls.
-  delete clamped.auditPath
+  // Trusted-only fields (audit destination, reviewer model/variant, decision
+  // transport, policy prompt text, session retention, actor delegation): the
+  // project layer cannot set them at all.
+  for (const field of TRUSTED_ONLY_FIELDS) delete clamped[field]
+
+  // Evidence budgets: project can raise, never lower.
+  for (const field of EVIDENCE_BUDGET_FIELDS) {
+    const projectValue = clamped[field]
+    if (typeof projectValue !== "number" || !Number.isFinite(projectValue)) {
+      delete clamped[field]
+      continue
+    }
+    const trustedValue = trusted[field]
+    if (typeof trustedValue === "number" && Number.isFinite(trustedValue)) {
+      clamped[field] = Math.max(projectValue, trustedValue)
+    }
+  }
 
   // repositoryTrust: project cannot set "trusted" — only global/inline can.
   if (clamped.repositoryTrust === "trusted") {
     delete clamped.repositoryTrust
   }
-
-  // actorProfiles: name→profile mappings are a trust delegation (which agent
-  // gets which capability profile). Only trusted global/inline config may
-  // grant them; otherwise a repository could promote its own agent to a
-  // higher-privilege profile ("build" → "operator"). trustedProjects opt-in is
-  // a future item; until then the project layer cannot define mappings at all.
-  delete clamped.actorProfiles
 
   // enforcementMode: project cannot enable OR disable enforcement — only
   // global/inline can. A project "enforce" is deleted (can't enable), and a

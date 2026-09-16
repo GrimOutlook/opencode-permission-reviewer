@@ -2,7 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { enrichSshEvidence } from "../src/ssh-evidence.ts"
+import { enrichSshEvidence, shellCommandSegments } from "../src/ssh-evidence.ts"
+import { emergencyBrakeReason } from "../src/emergency-brake.ts"
+import { lexSegments } from "../src/shell-lexer.ts"
 import { request } from "./helpers.ts"
 
 const temporaryDirectories: string[] = []
@@ -189,5 +191,50 @@ describe("SSH evidence enrichment", () => {
       8_000,
     )
     expect(result).toEqual({ text: "", audit: [] })
+  })
+})
+
+describe("shared tokenizer parity", () => {
+  test("a trailing comment is not read as part of the remote command", async () => {
+    const directory = await fixture()
+    const command = "ssh host 'docker ps' # rm -rf /"
+    const result = await enrichSshEvidence(
+      request({ patterns: [command], metadata: { command } }),
+      directory,
+      directory,
+      12_000,
+    )
+    // The brake strips the comment; the evidence path must read the same
+    // command, so the commented-out `rm` never becomes a mutation signal.
+    expect(emergencyBrakeReason(request({ metadata: { command } }))).toBeUndefined()
+    expect(result.text).toContain('"remoteCommand": "docker ps"')
+    expect(result.text).toContain('"mutationHint": false')
+  })
+
+  test("evidence segments match the brake's segmentation for the same command", () => {
+    for (const command of [
+      "ssh host cmd # rm -rf /",
+      "cat payload.txt | ssh host 'python3 -'",
+      "cd /tmp && ssh host 'ls' || echo failed",
+      'ssh host "echo \\"quoted ; not a separator\\""',
+      "ssh host 'a;b' ; ssh other 'c'",
+      "(cd /tmp && ssh host ls)",
+      "ssh host ls\nssh other ls",
+      "ssh host echo\\ one\\ token",
+    ]) {
+      const shared = lexSegments(command).map((segment) => segment.tokens.map((t) => t.value))
+      const evidence = shellCommandSegments(command).map((segment) => segment.tokens)
+      expect(evidence).toEqual(shared)
+    }
+  })
+
+  test("pipeline and boolean operators are preserved as the preceding operator", () => {
+    expect(shellCommandSegments("cat f | ssh host 'python3 -'")[1]!.preceding).toBe("|")
+    expect(shellCommandSegments("a && b")[1]!.preceding).toBe("&&")
+    expect(shellCommandSegments("a || b")[1]!.preceding).toBe("||")
+    expect(shellCommandSegments("a ; b")[1]!.preceding).toBe(";")
+    expect(shellCommandSegments("a & b")[1]!.preceding).toBe("&")
+    expect(shellCommandSegments("a\nb")[1]!.preceding).toBe(";")
+    expect(shellCommandSegments("a")[0]!.preceding).toBeUndefined()
   })
 })

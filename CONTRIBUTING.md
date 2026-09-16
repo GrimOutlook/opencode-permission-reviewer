@@ -50,10 +50,37 @@ bun run check   # typecheck + tests — must pass before any push
   touch the TUI, keep the file list in `scripts/copy-tui.ts` in sync with the
   imports of `src/tui.tsx` and its copied modules (no server engine, no
   `node:` builtins).
-- `dist/` is gitignored and regenerated on install (`prepare` runs the build);
-  never commit build output. `tests/package-smoke.test.ts` verifies the packed
-  tarball ships exactly the expected set (including the raw TUI files and the
-  absence of a prebundled TUI).
+- `dist/` is gitignored; never commit build output. `tests/package-smoke.test.ts`
+  verifies the packed tarball ships exactly the expected set (including the raw
+  TUI files and the absence of a prebundled TUI).
+- Run `bun run build` (or `bun run check`, which ends with a build) after a
+  fresh clone. Installing dependencies does **not** build for you — see below.
+
+### Why the build runs in `prepack`, not `prepare`
+
+npm runs `prepare` in three situations: packing/publishing, installing the
+package's own directory, and **installing the package from a Git URL or a local
+path**. That last one means a `prepare` build executes `tsup` and
+`scripts/copy-tui.ts` on the installing machine, before anyone can inspect what
+they installed — a package lifecycle script is code execution at install time,
+which is exactly the surface supply-chain attacks use.
+
+The build lives in `prepack` instead. `prepack` runs when the tarball is
+created (`npm pack`, `npm publish`), so:
+
+- the published package still ships a fully built `dist/` — consumers installing
+  from the registry get generated artifacts and run **no** build;
+- `tests/package-smoke.test.ts` and the release workflow still pack a real,
+  freshly built tarball;
+- installing this package from a Git URL no longer runs a build on the
+  installer's machine. It also will not produce a working `dist/`, which is
+  intended: the registry is the supported install path (`bun add
+opencode-permission-reviewer`), and failing visibly beats building silently.
+
+This package declares **no** `install`, `preinstall`, or `postinstall` scripts,
+and `tests/lifecycle-scripts.test.ts` fails if one is added. Keep the build's
+dependency set small for the same reason — everything `bun run build` touches is
+code that runs during a release.
 
 ## Live (end-to-end) testing
 
