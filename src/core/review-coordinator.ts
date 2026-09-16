@@ -46,6 +46,10 @@ import type { EvidenceProvider } from "../evidence/provider.ts"
 import { assembleEvidence, defaultEvidenceProviders } from "../context/evidence-assembler.ts"
 import type { AskDecisionSource } from "../context/ask-decisions.ts"
 import { applyEscalationDisposition, type EscalationCategory } from "../escalation.ts"
+import {
+  createReviewerSessionMetadata,
+  REVIEWER_SESSION_METADATA_KEY,
+} from "../session-metadata.ts"
 
 type Logger = (message: string, details?: unknown) => void
 
@@ -604,6 +608,9 @@ export class ReviewCoordinator {
             title: `[permission-review] ${envelope.request.permission}: ${redactSecrets(
               envelope.request.patterns.join(", "),
             ).slice(0, 120)}`,
+            metadata: {
+              [REVIEWER_SESSION_METADATA_KEY]: createReviewerSessionMetadata(envelope.request.id),
+            },
           },
           query: { directory: this.ctx.directory },
         }),

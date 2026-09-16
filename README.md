@@ -144,6 +144,27 @@ the agent can act on.
 call (up to `timeoutMs`). Your model spend scales with how much your policy
 `ask`s. Lower the reasoning `variant` or raise `confidenceThreshold` to taste.
 
+### Session metadata for integrations
+
+Each reviewer model call runs in a child session. The child is marked in its
+`session.created` event and `Session` record with this namespaced metadata:
+
+```json
+{
+  "opencode-permission-reviewer": {
+    "version": 1,
+    "kind": "permission-reviewer",
+    "requestID": "per_..."
+  }
+}
+```
+
+External server plugins can inspect `event.properties.info.metadata`. Use the
+exported `REVIEWER_SESSION_METADATA_KEY` and `isReviewerSessionMetadata()`
+helpers rather than matching the child-session title. The marker is an
+integration hint, not an authorization boundary. Track `session.deleted` too,
+because reviewer sessions are removed by default after the decision.
+
 ## Choosing the reviewer model
 
 The reviewer is a normal OpenCode model invocation (tools disabled), so it can
