@@ -65,6 +65,12 @@ export { applyEscalationDisposition, resolveEscalationDisposition } from "./esca
 export { emergencyBrakeReason } from "./emergency-brake.ts"
 export { redactSecrets } from "./redact.ts"
 export { createUiStatus, decodeUiStatus, encodeUiStatus, permissionAction } from "./ui-protocol.ts"
+export {
+  createReviewerSessionMetadata,
+  isReviewerSessionMetadata,
+  REVIEWER_SESSION_METADATA_KEY,
+  REVIEWER_SESSION_METADATA_VERSION,
+} from "./session-metadata.ts"
 export { ReviewUiState } from "./ui-state.ts"
 export { createAuditWriter, DEFAULT_AUDIT_PATH } from "./audit.ts"
 export { enrichSshEvidence } from "./ssh-evidence.ts"

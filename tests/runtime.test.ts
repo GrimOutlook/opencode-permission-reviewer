@@ -6,6 +6,10 @@ import { promisify } from "node:util"
 import { server } from "../src/index.ts"
 import { REVIEWER_SYSTEM_PROMPT } from "../src/policy.ts"
 import { extractPermissionRequest, type RuntimeContext } from "../src/runtime.ts"
+import {
+  createReviewerSessionMetadata,
+  REVIEWER_SESSION_METADATA_KEY,
+} from "../src/session-metadata.ts"
 import { decision, MockClient, request, runtime } from "./helpers.ts"
 
 function replyBody(value: unknown): Record<string, unknown> {
@@ -26,6 +30,14 @@ describe("runtime decisions", () => {
     const result = await harness.runtime.process(request())
     expect(result.kind).toBe("allow")
     expect(replyBody(harness.client.replies[0]).reply).toBe("once")
+    expect(harness.client.creates[0]).toMatchObject({
+      body: {
+        parentID: "ses_main",
+        metadata: {
+          [REVIEWER_SESSION_METADATA_KEY]: createReviewerSessionMetadata("per_1"),
+        },
+      },
+    })
     expect(harness.client.uiStatuses.map((status) => status.phase)).toEqual([
       "reviewing",
       "approved",
