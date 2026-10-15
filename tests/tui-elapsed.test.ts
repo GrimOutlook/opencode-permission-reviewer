@@ -48,6 +48,8 @@ describe("tui panel live elapsed counter", () => {
       },
       ui: { toast: () => {} },
       state: { session: { get: () => undefined } },
+      kv: { ready: true, get: () => undefined, set: () => {} },
+      lifecycle: { onDispose: () => () => {} },
       mode: { current: () => "normal", push: () => () => {} },
       slots: {
         register: (plugin: { slots: { app?: () => unknown } }) => {

@@ -22,6 +22,9 @@ const files = [
   ["src/ui-protocol.ts", "ui-protocol.ts"],
   ["src/ui-state.ts", "ui-state.ts"],
   ["src/types.ts", "types.ts"],
+  ["src/redact.ts", "redact.ts"],
+  ["src/review-history.ts", "review-history.ts"],
+  ["src/review-history-tui.tsx", "review-history-tui.tsx"],
   ["src/opencode/event-normalizer.ts", "opencode/event-normalizer.ts"],
 ] as const
 

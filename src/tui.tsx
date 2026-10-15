@@ -8,6 +8,7 @@ import { DEFAULT_CONFIG, resolveConfig } from "./config.ts"
 import { extractPermissionRequest } from "./opencode/event-normalizer.ts"
 import { decodeUiStatus, type ReviewUiStatus } from "./ui-protocol.ts"
 import { ReviewUiState } from "./ui-state.ts"
+import { installReviewHistory } from "./review-history-tui.tsx"
 
 const SPINNER = ["◐", "◓", "◑", "◒"] as const
 const REVIEW_MODE = "permission-reviewer"
@@ -36,6 +37,7 @@ function notifyManual(api: TuiPluginApi, status: ReviewUiStatus): void {
 
 export const tui: TuiPlugin = async (api, options) => {
   const config = resolveConfig(options)
+  const history = installReviewHistory(api, config)
   const state = new ReviewUiState({
     model: config.model,
     variant: config.variant,
@@ -96,7 +98,10 @@ export const tui: TuiPlugin = async (api, options) => {
   setInterval(() => {
     setFrame((value) => (value + 1) % SPINNER.length)
     const expired = state.expire()
-    for (const status of expired) notifyManual(api, status)
+    for (const status of expired) {
+      notifyManual(api, status)
+      history.observe(status)
+    }
     const dismissed = state.dismissResults()
     if (expired.length > 0 || dismissed.length > 0) touch()
   }, 250)

@@ -24,3 +24,4 @@ ensureSolidTransformPlugin()
 
 export const { tui } = await import("../src/tui.tsx")
 export const { testRender } = await import("@opentui/solid")
+export const { installReviewHistory } = await import("../src/review-history-tui.tsx")

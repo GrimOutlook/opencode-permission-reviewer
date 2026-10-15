@@ -140,6 +140,31 @@ Then ask the agent to run something safe, e.g. `printf hello`. An auto-approved
 injecting rationale into the agent context. Denials still return a short reason
 the agent can act on.
 
+### Permission review history
+
+The TUI plugin also adds **Permission reviews** to the session sidebar. The
+three latest reviews show the command/action, decision, and a short reason on
+distinct-background cards. Click a card or **View history**, use the command
+palette's **Permission review history** entry, or run **`/permission-reviews`**
+to open a scrollable dialog with all retained reviews for the session. The
+dialog is available even when the sidebar is hidden.
+
+History includes descendant sessions whose ancestry was available when the
+review arrived. A permission reply takes precedence over a later reviewer
+result; a reviewer approval without a reply is labeled **Reviewer approved**,
+not confirmation that the command ran. Manual escalation and fail-closed
+denials have distinct labels. The existing live overlay still dismisses its
+results after five seconds; the history cards remain.
+
+The plugin retains up to **500 entries across sessions** in OpenCode's local
+TUI key/value storage (`opencode-permission-reviewer.history.v1`). Completed
+reviews and answered permissions survive TUI restarts; in-flight reviews are
+not restored. Commands and reasons use the existing bounded display strings
+and secret-redaction helper. History starts when this TUI plugin is running;
+it does not backfill older audit records or synchronize between clients.
+History is presentation-only and is not appended to agent messages or tool
+output. No OpenCode host changes are needed.
+
 **Cost note:** every `ask` action now spawns one extra child-session model
 call (up to `timeoutMs`). Your model spend scales with how much your policy
 `ask`s. Lower the reasoning `variant` or raise `confidenceThreshold` to taste.

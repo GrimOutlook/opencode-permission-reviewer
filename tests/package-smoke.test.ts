@@ -80,6 +80,9 @@ describe("npm pack ship set", () => {
       "dist/tui/config.ts",
       "dist/tui/ui-protocol.ts",
       "dist/tui/ui-state.ts",
+      "dist/tui/review-history.ts",
+      "dist/tui/review-history-tui.tsx",
+      "dist/tui/redact.ts",
       "dist/tui/types.ts",
       "dist/tui/opencode/event-normalizer.ts",
     ]) {

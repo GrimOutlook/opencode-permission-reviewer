@@ -68,6 +68,8 @@ async function captureOverlay(): Promise<CapturedApi> {
     },
     ui: { toast: (input: { title?: string }) => void toasts.push(input) },
     state: { session: { get: () => undefined } },
+    kv: { ready: true, get: () => undefined, set: () => {} },
+    lifecycle: { onDispose: () => () => {} },
     mode: {
       current: () => "normal",
       push: (name: string) => {
