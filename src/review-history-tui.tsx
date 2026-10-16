@@ -71,35 +71,35 @@ export function installReviewHistory(
   }
   const openHistory = (sessionID = routeSessionID(api)) => {
     if (!sessionID) return
+    // The host wraps replace() content in its full-screen Dialog. Nesting a
+    // second Dialog applies the terminal-sized positioning a second time.
     api.ui.dialog.replace(() => (
-      <api.ui.Dialog size="xlarge" onClose={() => api.ui.dialog.clear()}>
-        <box flexDirection="column" gap={1} padding={2}>
-          <box flexDirection="row" justifyContent="space-between">
-            <text fg={api.theme.current.text}>Permission review history</text>
-            <text fg={api.theme.current.textMuted} onMouseUp={() => api.ui.dialog.clear()}>
-              esc · close
-            </text>
-          </box>
-          <text fg={api.theme.current.textMuted}>
-            {entries(sessionID).length} reviews · newest first · up to {HISTORY_LIMIT} saved locally
+      <box flexDirection="column" gap={1} padding={2}>
+        <box flexDirection="row" justifyContent="space-between">
+          <text fg={api.theme.current.text}>Permission review history</text>
+          <text fg={api.theme.current.textMuted} onMouseUp={() => api.ui.dialog.clear()}>
+            esc · close
           </text>
-          <scrollbox height={Math.max(3, Math.min(24, api.renderer.height - 10))} focused>
-            <box flexDirection="column" gap={1}>
-              <For
-                each={entries(sessionID)}
-                fallback={
-                  <text fg={api.theme.current.textMuted}>
-                    No reviews recorded for this session.
-                  </text>
-                }
-              >
-                {(entry) => <ReviewHistoryCard api={api} entry={entry} />}
-              </For>
-            </box>
-          </scrollbox>
         </box>
-      </api.ui.Dialog>
+        <text fg={api.theme.current.textMuted}>
+          {entries(sessionID).length} reviews · newest first · up to {HISTORY_LIMIT} saved locally
+        </text>
+        <scrollbox height={Math.max(3, Math.min(24, api.renderer.height - 10))} focused>
+          <box flexDirection="column" gap={1}>
+            <For
+              each={entries(sessionID)}
+              fallback={
+                <text fg={api.theme.current.textMuted}>No reviews recorded for this session.</text>
+              }
+            >
+              {(entry) => <ReviewHistoryCard api={api} entry={entry} />}
+            </For>
+          </box>
+        </scrollbox>
+      </box>
     ))
+    // replace() resets the stack size, so set it after replacing the content.
+    api.ui.dialog.setSize("xlarge")
   }
 
   // The v1 command shim exposes both the palette entry and slash command.

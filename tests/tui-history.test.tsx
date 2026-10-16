@@ -14,6 +14,7 @@ async function setupHistory(stored?: unknown, ready = true) {
   const saved = new Map<string, unknown>([[HISTORY_KEY, stored]])
   const [kvReady, setKvReady] = createSignal(ready)
   const [dialog, setDialog] = createSignal<(() => JSX.Element) | undefined>()
+  const [dialogSize, setDialogSize] = createSignal<"medium" | "large" | "xlarge">("medium")
   const [sessionID, setSessionID] = createSignal("ses_main")
   let sidebar: (context: object, props: { session_id: string }) => JSX.Element = () => null
   let commands: () => TuiCommand[] = () => []
@@ -68,11 +69,32 @@ async function setupHistory(stored?: unknown, ready = true) {
       },
     },
     ui: {
-      Dialog: (props: { children: JSX.Element }) => (
-        <box flexDirection="column">{props.children}</box>
+      // Match the host's full-screen Dialog and its inner, centered surface.
+      // dialog.replace() already renders this wrapper around plugin content.
+      Dialog: (props: { children: JSX.Element; size?: "medium" | "large" | "xlarge" }) => (
+        <box
+          width={160}
+          height={40}
+          alignItems="center"
+          position="absolute"
+          paddingTop={10}
+          left={0}
+          top={0}
+        >
+          <box
+            width={props.size === "xlarge" ? 116 : props.size === "large" ? 88 : 60}
+            paddingTop={1}
+          >
+            {props.children}
+          </box>
+        </box>
       ),
       dialog: {
-        replace: (render: () => JSX.Element) => setDialog(() => render),
+        replace: (render: () => JSX.Element) => {
+          setDialogSize("medium")
+          setDialog(() => render)
+        },
+        setSize: setDialogSize,
         clear: () => setDialog(undefined),
       },
     },
@@ -94,11 +116,15 @@ async function setupHistory(stored?: unknown, ready = true) {
       const content = createMemo(() => sidebar({}, { session_id: sessionID() }))
       return (
         <Show when={dialog()} fallback={<box width={40}>{content()}</box>}>
-          {(render) => render()()}
+          {(render) => (
+            <api.ui.Dialog size={dialogSize()} onClose={() => api.ui.dialog.clear()}>
+              {render()()}
+            </api.ui.Dialog>
+          )}
         </Show>
       )
     },
-    { width: 100, height: 40 },
+    { width: 160, height: 40 },
   )
   Object.assign(api, { renderer: app.renderer })
   await app.flush()
@@ -180,9 +206,15 @@ describe("permission history TUI", () => {
       await app.flush()
       const frame = app.captureCharFrame()
       expect(frame).toContain("Permission review history")
-      expect(frame).toContain("End of full rationale.")
+      expect(frame).toMatch(/End\s+│?\s*of full rationale\./)
       expect(frame).toContain("test/model")
       expect(frame).toContain("esc · close")
+      // Only the host positions the dialog: (160 - 116) / 2 + 2 padding.
+      const lines = frame.split("\n")
+      const titleRow = lines.findIndex((line) => line.includes("Permission review history"))
+      expect(titleRow).toBe(13) // host quarter-height inset + 1 + 2 padding
+      expect(lines[titleRow]!.indexOf("Permission review history")).toBe(24)
+      expect(lines[titleRow]!.indexOf("esc · close")).toBe(125)
     } finally {
       app.dispose()
     }
