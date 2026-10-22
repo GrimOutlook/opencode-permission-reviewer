@@ -109,6 +109,44 @@ export const tui: TuiPlugin = async (api, options) => {
   api.slots.register({
     order: 1_000,
     slots: {
+      app_bottom() {
+        revision()
+        const sessionID = routeSessionID(api)
+        const status = sessionID
+          ? state.activeFor(sessionID, (id) => parentSessionID(api, id), true)
+          : undefined
+        // In normal layout flow so the native approval controls stay visible.
+        return (
+          <Show when={status?.phase === "manual" ? status : undefined} keyed>
+            {(current) => (
+              <box flexDirection="column" paddingLeft={2} paddingRight={2} flexShrink={0}>
+                <text fg={api.theme.current.warning}>Manual review required</text>
+                <scrollbox maxHeight={10}>
+                  <box flexDirection="column">
+                    <text fg={api.theme.current.text} wrapMode="word">
+                      {current.action}
+                    </text>
+                    <Show when={current.reason}>
+                      <text fg={api.theme.current.textMuted} wrapMode="word">
+                        {current.reason}
+                      </text>
+                    </Show>
+                    <Show
+                      when={
+                        current.decision?.rationale && current.decision.rationale !== current.reason
+                      }
+                    >
+                      <text fg={api.theme.current.text} wrapMode="word">
+                        Reviewer analysis: {current.decision?.rationale}
+                      </text>
+                    </Show>
+                  </box>
+                </scrollbox>
+              </box>
+            )}
+          </Show>
+        )
+      },
       app() {
         // Load-bearing direct read: it subscribes the slot's render pass to
         // every state transition (touch), so the factory re-runs and renders

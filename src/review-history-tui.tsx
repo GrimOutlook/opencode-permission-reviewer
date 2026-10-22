@@ -181,6 +181,19 @@ function ReviewHistoryCard(props: {
             : props.entry.status.reason}
         </text>
       </Show>
+      <Show
+        when={
+          props.entry.status.decision?.rationale &&
+          props.entry.status.decision.rationale !== props.entry.status.reason
+        }
+      >
+        <text fg={theme().text} wrapMode="word">
+          Reviewer analysis:{" "}
+          {props.compact
+            ? shortened(props.entry.status.decision?.rationale ?? "", 160)
+            : props.entry.status.decision?.rationale}
+        </text>
+      </Show>
       <Show when={!props.compact}>
         <text fg={theme().textMuted} wrapMode="word">
           {new Date(props.entry.status.emittedAt).toLocaleString()} ·{" "}
