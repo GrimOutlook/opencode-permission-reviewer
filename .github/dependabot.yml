@@ -1,18 +1,16 @@
 version: 2
 updates:
-  # npm dependencies — weekly checks, grouped to reduce PR noise.
+  # Bun updates both package.json and bun.lock in the same PR.
   # Exact-pinned runtime packages (@opentui/*, solid-js) carry native artifacts;
   # DEPENDENCIES.md records the review checklist and the outcome for each bump.
-  # PRs target `dev` (the integration branch) instead of `main` so Dependabot
-  # compares against the up-to-date manifest and does not re-open PRs for
-  # versions already integrated.
-  - package-ecosystem: npm
+  - package-ecosystem: bun
     directory: /
-    target-branch: dev
     schedule:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
     groups:
       # Non-breaking type+patch updates batch together.
       patch-and-minor:
@@ -26,10 +24,12 @@ updates:
   # GitHub Actions used in workflows.
   - package-ecosystem: github-actions
     directory: /
-    target-branch: dev
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
     commit-message:
       prefix: ci
       include: scope

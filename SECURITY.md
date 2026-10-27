@@ -7,9 +7,7 @@ Please **do not** file a public issue for a security vulnerability. Instead,
 use GitHub's private vulnerability reporting:
 
 - go to **Report a vulnerability** at
-  https://github.com/Warc0s/opencode-permission-reviewer/security/advisories/new
-
-or email the maintainer directly if the report contains sensitive details.
+  https://github.com/GrimOutlook/opencode-permission-reviewer/security/advisories/new
 
 Include, when possible:
 
