@@ -63,7 +63,20 @@ export function installModeCommands(api: TuiPluginApi): void {
     slots: {
       sidebar_content() {
         const current = mode()
-        return <text fg={api.theme.current.textMuted}>Review mode: {current}</text>
+        const color =
+          current === "human-review"
+            ? "#FFA500"
+            : current === "automatic"
+              ? "#22C55E"
+              : api.theme.current.textMuted
+        return (
+          <box flexDirection="row">
+            <text fg={api.theme.current.textMuted}>Review mode: </text>
+            <text fg={color}>
+              <b>{current}</b>
+            </text>
+          </box>
+        )
       },
     },
   })
