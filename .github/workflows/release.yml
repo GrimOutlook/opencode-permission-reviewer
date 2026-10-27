@@ -34,21 +34,28 @@ on:
       - "v*"
 
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
     name: release
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Full history so the CHANGELOG extraction can locate the version
           # and the tag-reachability check can walk to the release branch.
           fetch-depth: 0
+          persist-credentials: false
 
       # A pushed `v*` tag is attacker-controllable if tag protection is ever
       # missing or bypassed, and the version check below only compares the tag
@@ -116,14 +123,14 @@ jobs:
       - name: Generate SHA-256 checksums
         run: |
           cd artifacts
-          sha256sum *.tgz > checksums-sha256.txt
+          sha256sum ./*.tgz > checksums-sha256.txt
           cat checksums-sha256.txt
 
       # Install Node/npm for publishing. setup-node configures the npm
       # registry auth from NODE_AUTH_TOKEN via .npmrc automatically.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
       # Publish to npm with build provenance (signed OIDC attestation).

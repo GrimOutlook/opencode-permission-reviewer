@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Remediated high/critical transitive dependency advisories with release-age-
+  compliant overrides for brace-expansion, Seroval, TOML, and Zod.
+- Required CI now includes a dependency audit; workflows use SHA-pinned actions
+  and least-privilege defaults. Dependency version updates have a seven-day
+  cooldown in Dependabot and local Bun resolution.
+
 ## [1.3.1] - 2026-09-03
 
 ### Fixed

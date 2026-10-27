@@ -5,6 +5,44 @@ checked when a pin moved. Kept in the repository (not in `docs/`, which is
 git-ignored and local-only) so the reasoning ships with the code and survives
 maintainer turnover.
 
+## Seven-day upgrade cooldown
+
+- Dependabot checks Bun packages and GitHub Actions weekly on Monday, targeting
+  `main`. Both ecosystems use `cooldown.default-days: 7`: a release must be at
+  least seven days old before a version-update PR can propose it. Major upgrades
+  remain separate; minor/patch Bun upgrades are grouped. No automatic merging.
+- `bunfig.toml` also sets `install.minimumReleaseAge = 604800` (seven days) for
+  new direct and transitive package resolutions during local installs/updates.
+  Existing `bun.lock` entries are preserved; frozen CI installs reproduce the
+  reviewed graph rather than resolving fresh versions.
+- GitHub's version-update cooldown does not govern security-update PRs. Bun
+  currently has no Dependabot security-update support, so CI runs
+  `bun audit --audit-level=high`; fixes are reviewed and committed explicitly.
+  Do not treat the weekly schedule alone as a release-age gate.
+
+### 2026-10-27 — audit remediation
+
+The required dependency audit exposed ten high/critical advisory findings.
+Exact transitive overrides remediate them without moving the OpenCode/OpenTUI
+host pins. All selected releases were already more than seven days old:
+
+| Package           | Pin      | Published  | Purpose                                                         |
+| ----------------- | -------- | ---------- | --------------------------------------------------------------- |
+| `brace-expansion` | `5.0.12` | 2026-09-14 | Nested-brace resource exhaustion fixes                          |
+| `seroval`         | `1.6.11` | 2026-10-18 | Deserialization callable-invocation and memory-exhaustion fixes |
+| `toml`            | `5.0.1`  | 2026-10-12 | Parser resource-exhaustion fixes                                |
+| `zod`             | `4.6.7`  | 2026-10-12 | Collection validation memory-exhaustion fix                     |
+
+The brace-expansion override also consolidates glob's older `2.x` copy; brace
+expansion through glob's minimatch was verified on both Bun and Node.
+`seroval` moves beyond Solid's declared `~1.5.0` range, and `toml` moves beyond
+Effect's declared `^4.1.1` range. These are explicit security overrides, not
+host API upgrades. Revisit them when the parents adopt fixed versions. Zod and
+TOML are in the development host graph; consumers still use their own OpenCode
+host. The complete 785-test suite, typechecking, lint, build, package smoke
+tests, coverage gates, and audit pass with these pins; `bun audit` reports no
+vulnerabilities.
+
 ## Pinned runtime dependencies (OpenTUI, Solid)
 
 `@opentui/core`, `@opentui/solid`, and `solid-js` are pinned to exact versions
@@ -13,8 +51,8 @@ because the TUI overlay is compiled by OpenCode's host pipeline, where a patch
 difference can change rendering behavior. Exact pins make every change to that
 graph an explicit, reviewable commit.
 
-Exact pinning only helps if the pins are actually revisited. Dependabot's npm
-ecosystem entry (`.github/dependabot.yml`) opens weekly PRs against `dev`; this
+Exact pinning only helps if the pins are actually revisited. Dependabot's Bun
+ecosystem entry (`.github/dependabot.yml`) opens weekly PRs against `main`; this
 file records what was checked when a pinned version moves, so "still on an old
 patch" is a decision rather than an oversight.
 

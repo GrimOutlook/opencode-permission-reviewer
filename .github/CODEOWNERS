@@ -1,9 +1,10 @@
 # Default owner for the whole repository.
-* @Warc0s
+* @GrimOutlook
 
 # Safety-critical paths require explicit review attention (no auto-merge).
-/src/decision.ts      @Warc0s
-/src/policy.ts        @Warc0s
-/src/emergency-brake.ts @Warc0s
-/src/policy/          @Warc0s
-/src/opencode/        @Warc0s
+/src/decision.ts      @GrimOutlook
+/src/policy.ts        @GrimOutlook
+/src/emergency-brake.ts @GrimOutlook
+/src/policy/          @GrimOutlook
+/src/opencode/        @GrimOutlook
+/.github/            @GrimOutlook

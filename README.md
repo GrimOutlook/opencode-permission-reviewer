@@ -11,9 +11,14 @@
 
 [![OpenCode](https://img.shields.io/badge/OpenCode-%E2%89%A51.18.11-6E56CF)](https://opencode.ai)
 [![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.3.0-000000)](https://bun.sh)
-[![License](https://img.shields.io/github/license/Warc0s/opencode-permission-reviewer?color=blue)](./LICENSE)
-[![Checks](https://img.shields.io/github/actions/workflow/status/Warc0s/opencode-permission-reviewer/ci.yml?branch=main&label=checks)](https://github.com/Warc0s/opencode-permission-reviewer/actions/workflows/ci.yml)
-[![Open issues](https://img.shields.io/github/issues/Warc0s/opencode-permission-reviewer)](https://github.com/Warc0s/opencode-permission-reviewer/issues)
+[![License](https://img.shields.io/github/license/GrimOutlook/opencode-permission-reviewer?color=blue)](./LICENSE)
+[![Checks](https://img.shields.io/github/actions/workflow/status/GrimOutlook/opencode-permission-reviewer/ci.yml?branch=main&label=checks)](https://github.com/GrimOutlook/opencode-permission-reviewer/actions/workflows/ci.yml)
+[![Open issues](https://img.shields.io/github/issues/GrimOutlook/opencode-permission-reviewer)](https://github.com/GrimOutlook/opencode-permission-reviewer/issues)
+
+This fork is maintained at [GrimOutlook/opencode-permission-reviewer](https://github.com/GrimOutlook/opencode-permission-reviewer),
+derived from [warc0s/opencode-permission-reviewer](https://github.com/warc0s/opencode-permission-reviewer).
+See [Contributing](./CONTRIBUTING.md), [Dependency policy](./DEPENDENCIES.md),
+and [Repository settings](./.github/REPOSITORY_SETTINGS.md) for development and maintenance.
 
 OpenCode pauses on **every** `ask` permission and waits for a keystroke — even
 for safe, routine actions. This plugin adds a Codex-Guardian-style reviewer: a

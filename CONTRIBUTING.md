@@ -6,15 +6,30 @@ decisions, so changes need to be deliberate and well-tested.
 ## Setup
 
 ```bash
-git clone https://github.com/Warc0s/opencode-permission-reviewer.git
+git clone https://github.com/GrimOutlook/opencode-permission-reviewer.git
 cd opencode-permission-reviewer
-bun install
-bun run check   # typecheck + tests — must pass before any push
+bun install --frozen-lockfile
+bun run check   # formatting + lint + typecheck + tests + build
 ```
 
 ## Before you open a PR
 
-1. **`bun run check` is green** (typecheck + full test suite, including the
+Use Bun 1.3.5 for development (`packageManager` in `package.json`). CI also
+tests the minimum supported Bun 1.3.0. Create a branch and open a PR against
+`main`; use descriptive Conventional Commit titles such as `fix: ...`,
+`feat: ...`, or `ci: ...`. PRs are squash-merged after the required `ci` and
+`codeql` checks pass and review conversations are resolved.
+
+CI runs formatting, lint, typechecking, all tests (including package smoke
+tests), build, coverage thresholds, a high/critical dependency audit, and
+CodeQL analysis. Run `bun run test:coverage` and `bun audit --audit-level=high`
+locally when changing dependencies or enforcement code.
+
+Dependency upgrades must satisfy the seven-day release-age policy in
+[DEPENDENCIES.md](./DEPENDENCIES.md). Commit `package.json` and `bun.lock`
+together; CI uses frozen-lockfile installs.
+
+1. **`bun run check` is green** (formatting, lint, typecheck, build, and full test suite, including the
    stress suite). Do not disable tests to make this pass.
 2. **No personal data or secrets in code or tests.** Use clearly-synthetic
    fixtures (e.g. `sk-syntheticcredential...`, documentation IP ranges

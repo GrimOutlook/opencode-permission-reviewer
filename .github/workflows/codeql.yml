@@ -4,29 +4,38 @@ on:
   push:
     branches: [main, dev]
   pull_request:
+  workflow_dispatch:
   schedule:
     # Weekly scan on Monday.
     - cron: "16 4 * * 1"
 
 permissions:
   contents: read
-  security-events: write
+
+concurrency:
+  group: codeql-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   analyze:
     name: analyze
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
     steps:
-      - uses: actions/checkout@v7
-      - uses: github/codeql-action/init@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
         with:
           languages: javascript-typescript
           # The plugin shells out to read-only enrichment commands and replies
           # through an authenticated transport. Tune the suite to surface
           # command-injection and path-traversal regressions.
           queries: security-extended
-      - uses: github/codeql-action/analyze@v4
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
         with:
           category: "/language:javascript-typescript"
 
@@ -38,6 +47,7 @@ jobs:
     if: always()
     needs: [analyze]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: CodeQL analysis green
         run: |
