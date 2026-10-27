@@ -6,6 +6,7 @@ import { createV1Adapter } from "./opencode/v1-adapter.ts"
 import { AskDecisionRegistry } from "./context/ask-decisions.ts"
 import type { RuntimeContext } from "./opencode/types.ts"
 import { createAuditWriter } from "./audit.ts"
+import { applyModeCommand } from "./runtime-mode.ts"
 
 export const server: Plugin = async (input, options) => {
   const config = loadResolvedConfig(options, input.directory)
@@ -33,6 +34,14 @@ export const server: Plugin = async (input, options) => {
 
   return {
     event: async ({ event }) => {
+      const modeResponse = applyModeCommand(config, event)
+      if (modeResponse) {
+        await input.client.tui.publish({
+          body: { type: "tui.command.execute", properties: { command: modeResponse } },
+          query: { directory: input.directory },
+        })
+        return
+      }
       // Observe synchronously first: reviews started by later events must see
       // ask decisions captured by this one. The observer is total.
       askDecisions?.observe(event)

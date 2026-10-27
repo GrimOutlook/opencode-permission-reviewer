@@ -9,6 +9,7 @@ import { extractPermissionRequest } from "./opencode/event-normalizer.ts"
 import { decodeUiStatus, type ReviewUiStatus } from "./ui-protocol.ts"
 import { ReviewUiState } from "./ui-state.ts"
 import { installReviewHistory } from "./review-history-tui.tsx"
+import { installModeCommands } from "./runtime-mode-tui.tsx"
 
 const SPINNER = ["◐", "◓", "◑", "◒"] as const
 const REVIEW_MODE = "permission-reviewer"
@@ -37,6 +38,7 @@ function notifyManual(api: TuiPluginApi, status: ReviewUiStatus): void {
 
 export const tui: TuiPlugin = async (api, options) => {
   const config = resolveConfig(options)
+  installModeCommands(api)
   const history = installReviewHistory(api, config)
   const state = new ReviewUiState({
     model: config.model,

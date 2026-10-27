@@ -548,4 +548,17 @@ Example plugin options: `{ "mode": "automatic", "model": "openai/gpt-5.6-luna" }
 The mode is trusted configuration: a project-local reviewer file cannot change it.
 Legacy `escalationMode` remains supported when `mode` is omitted. An explicit mode
 takes precedence over that legacy option; per-category `riskPolicy` deny settings
-can still harden human-review failures. Restart OpenCode after changing modes.
+can still harden human-review failures.
+
+### Runtime controls
+
+- `/permission-review-mode` or **Ctrl+Alt+P** toggles the running reviewer.
+- `/permission-review-automatic` selects automatic mode.
+- `/permission-review-human-review` selects human-review mode.
+- These actions are also available under **Permission reviewer** in the command
+  palette. The sidebar shows the server's active mode and a toast confirms changes.
+
+Runtime changes apply to the current server instance (including its sessions and
+in-flight reviews that have not decided yet). Already escalated manual prompts
+remain for you to answer. Changes are not persisted: a server restart restores the
+configured default. No restart is needed to toggle once this plugin is installed.

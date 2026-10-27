@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { TuiPluginApi, TuiPluginMeta } from "@opencode-ai/plugin/tui"
+import type { TuiCommand, TuiPluginApi, TuiPluginMeta } from "@opencode-ai/plugin/tui"
 import { tui, testRender } from "./tui-loader.ts"
 import { createUiStatus, encodeUiStatus } from "../src/ui-protocol.ts"
 import { request } from "./helpers.ts"
@@ -34,16 +34,34 @@ interface CapturedApi {
   /** By-reference mode bookkeeping: a bare number would be snapshotted. */
   mode: { pushes: string[]; pops: number }
   toasts: Array<{ title?: string }>
+  commands: TuiCommand[]
+  published: Array<{ body: { properties: { command: string } } }>
 }
 
 async function captureOverlay(): Promise<CapturedApi> {
   const handlers = new Map<string, EventHandler[]>()
   const mode = { pushes: [] as string[], pops: 0 }
   const toasts: Array<{ title?: string }> = []
+  const commands: TuiCommand[] = []
+  const published: Array<{ body: { properties: { command: string } } }> = []
   let factory: (() => unknown) | undefined
   let manualFactory: (() => unknown) | undefined
 
   const api = {
+    command: {
+      register: (cb: () => TuiCommand[]) => {
+        commands.push(...cb())
+        return () => {}
+      },
+    },
+    client: {
+      tui: {
+        publish: async (input: (typeof published)[number]) => {
+          published.push(input)
+          return { data: true }
+        },
+      },
+    },
     route: {
       current: { name: "session", params: { sessionID: "ses_main" } },
       register: () => () => {},
@@ -68,7 +86,10 @@ async function captureOverlay(): Promise<CapturedApi> {
         return () => {}
       },
     },
-    ui: { toast: (input: { title?: string }) => void toasts.push(input) },
+    ui: {
+      toast: (input: { title?: string }) => void toasts.push(input),
+      dialog: { clear: () => {} },
+    },
     state: { session: { get: () => undefined } },
     kv: { ready: true, get: () => undefined, set: () => {} },
     lifecycle: { onDispose: () => () => {} },
@@ -101,8 +122,26 @@ async function captureOverlay(): Promise<CapturedApi> {
     fingerprint: "test",
     state: "first",
   } satisfies TuiPluginMeta)
-  return { api, handlers, factory, manualFactory, mode, toasts }
+  return { api, handlers, factory, manualFactory, mode, toasts, commands, published }
 }
+
+test("runtime mode slash command and hotkey send a server command and confirm only on acknowledgment", async () => {
+  const captured = await captureOverlay()
+  const toggle = captured.commands.find((cmd) => cmd.slash?.name === "permission-review-mode")!
+  expect(toggle.keybind).toBe("ctrl+alt+p")
+  expect(captured.published[0]?.body.properties.command).toBe(
+    "opencode-permission-reviewer.mode.get",
+  )
+  await toggle.onSelect?.()
+  expect(captured.published.at(-1)?.body.properties.command).toBe(
+    "opencode-permission-reviewer.mode.toggle",
+  )
+  expect(captured.toasts).toHaveLength(0)
+  fire(captured, "tui.command.execute", {
+    properties: { command: "opencode-permission-reviewer.mode.changed.human-review" },
+  })
+  expect(captured.toasts.at(-1)?.title).toBe("Permission reviewer mode")
+})
 
 function fire(captured: CapturedApi, type: string, event: unknown): void {
   for (const handler of captured.handlers.get(type) ?? []) handler(event as never)
