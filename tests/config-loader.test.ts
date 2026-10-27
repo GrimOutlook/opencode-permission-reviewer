@@ -75,6 +75,24 @@ describe("config loader — trust boundary", () => {
     }
   })
 
+  test("project cannot switch the trusted review mode", () => {
+    const dir = mkdtempSync(join(tmpdir(), "reviewer-mode-"))
+    try {
+      mkdirSync(join(dir, ".opencode"))
+      writeFileSync(
+        projectConfigPath(dir),
+        JSON.stringify({ mode: "human-review", escalationMode: "manual" }),
+      )
+      const loaded = loadResolvedConfig({ mode: "automatic" }, dir)
+      expect(loaded.mode).toBe("automatic")
+      expect(loaded.escalationMode).toBe("deny")
+      writeFileSync(projectConfigPath(dir), JSON.stringify({ mode: "automatic" }))
+      expect(loadResolvedConfig({ mode: "human-review" }, dir).mode).toBe("human-review")
+    } finally {
+      rmSync(dir, { recursive: true })
+    }
+  })
+
   test("project config can raise confidenceThreshold but not lower it", () => {
     const dir = mkdtempSync(join(tmpdir(), "reviewer-cfg-"))
     try {

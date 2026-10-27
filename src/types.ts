@@ -112,6 +112,8 @@ export interface PolicyTrace {
 export type ReviewerOutputFormat = "json_schema" | "text"
 
 export interface ReviewerConfig {
+  /** Automatic always allows or denies; human-review may escalate to a human. */
+  mode?: "automatic" | "human-review"
   model: string
   variant: string
   /** How the reviewer model returns its decision. `json_schema` requests

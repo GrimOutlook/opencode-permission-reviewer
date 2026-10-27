@@ -529,3 +529,23 @@ The reviewer policy and prompt text in `src/policy.ts` are adapted from
 ## License
 
 [Apache License 2.0](./LICENSE) © 2026 Warc0s
+
+## Review modes
+
+Set `mode` in the plugin options (use the same options in `opencode.json` and
+`tui.json`) or in `~/.config/opencode/permission-reviewer.jsonc`:
+
+- `"automatic"`: every reviewed request is allowed once or denied. Questionable
+  commands, insufficient evidence, invalid reviewer output and reviewer failures
+  are denied without waiting for a human. Rejections include the reason in the
+  tool error seen by the agent, so it can correct the command or gather evidence
+  and try again. Successful approvals add no agent-context noise.
+- `"human-review"` (default): clear requests are allowed or denied automatically;
+  questionable requests remain pending for human review, with the analysis shown
+  in the permission UI. Explicit denials remain denials.
+
+Example plugin options: `{ "mode": "automatic", "model": "openai/gpt-5.6-luna" }`.
+The mode is trusted configuration: a project-local reviewer file cannot change it.
+Legacy `escalationMode` remains supported when `mode` is omitted. An explicit mode
+takes precedence over that legacy option; per-category `riskPolicy` deny settings
+can still harden human-review failures. Restart OpenCode after changing modes.

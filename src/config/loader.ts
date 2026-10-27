@@ -44,6 +44,7 @@ export function projectConfigPath(directory: string): string {
  * profiles, or keep reviewer sessions (which hold the evidence) around.
  */
 const TRUSTED_ONLY_FIELDS = [
+  "mode",
   "model",
   "variant",
   "outputFormat",

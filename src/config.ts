@@ -215,6 +215,7 @@ export function resolveConfig(options: Record<string, unknown> | undefined): Rev
       : undefined
 
   return {
+    ...(source.mode === "automatic" || source.mode === "human-review" ? { mode: source.mode } : {}),
     model,
     variant,
     outputFormat,
@@ -267,7 +268,12 @@ export function resolveConfig(options: Record<string, unknown> | undefined): Rev
     debug: typeof source.debug === "boolean" ? source.debug : DEFAULT_CONFIG.debug,
     enforcementMode:
       source.enforcementMode === "enforce" ? "enforce" : DEFAULT_CONFIG.enforcementMode,
-    escalationMode: resolveEscalationMode(source.escalationMode),
+    escalationMode:
+      source.mode === "automatic"
+        ? "deny"
+        : source.mode === "human-review"
+          ? "manual"
+          : resolveEscalationMode(source.escalationMode),
     maxSessionDepth: boundedInteger(source.maxSessionDepth, DEFAULT_CONFIG.maxSessionDepth, 1, 32),
     maxParentSessions: boundedInteger(
       source.maxParentSessions,
