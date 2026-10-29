@@ -418,7 +418,24 @@ by itself** (one narrow deterministic exception exists for SSH, below).
   never modified.**
 
 Only regular text files inside the working directory, the worktree, or
-`/tmp/opencode` can be included. Missing, blocked, and truncated executable
+`/tmp/opencode` can be included by default. For local interpreter scripts,
+trusted global or inline configuration can add absolute directories with
+`scriptReadRoots` (default `[]`):
+
+```jsonc
+// ~/.config/opencode/permission-reviewer.jsonc
+{
+  "scriptReadRoots": ["/home/you/.gsd-path/runtimes"],
+}
+```
+
+Project-local configuration cannot set this option. Paths must be absolute
+(no `~` expansion); symlink destinations must remain within an approved root.
+This only permits bounded script inspection, not execution approval, and does
+not expand SSH or Git evidence roots. Existing sensitive-file, text, and size
+checks still apply. Restart OpenCode after changing configuration.
+
+Missing, blocked, and truncated executable
 stdin is explicitly identified so the reviewer fails safe.
 
 The **only** deterministic SSH preflight rejection is an executable stdin file

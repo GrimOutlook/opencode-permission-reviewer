@@ -13,6 +13,7 @@ export class LocalScriptEvidenceProvider implements EvidenceProvider {
       input.directory,
       input.worktree,
       input.maxChars,
+      input.scriptReadRoots,
     )
     return { kind: "local_script", text: result.text }
   }

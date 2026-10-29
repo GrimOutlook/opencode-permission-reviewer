@@ -75,6 +75,23 @@ describe("config loader — trust boundary", () => {
     }
   })
 
+  test("script read roots require trusted config and absolute paths", () => {
+    const dir = mkdtempSync(join(tmpdir(), "reviewer-roots-"))
+    try {
+      mkdirSync(join(dir, ".opencode"))
+      writeFileSync(projectConfigPath(dir), JSON.stringify({ scriptReadRoots: ["/etc"] }))
+      expect(loadResolvedConfig(undefined, dir).scriptReadRoots).toEqual([])
+      expect(
+        loadResolvedConfig({ scriptReadRoots: ["/trusted/runtime"] }, dir).scriptReadRoots,
+      ).toEqual(["/trusted/runtime"])
+      expect(
+        resolveConfig({ scriptReadRoots: ["relative", "~/runtime", 42, "/valid"] }).scriptReadRoots,
+      ).toEqual(["/valid"])
+    } finally {
+      rmSync(dir, { recursive: true })
+    }
+  })
+
   test("project cannot switch the trusted review mode", () => {
     const dir = mkdtempSync(join(tmpdir(), "reviewer-mode-"))
     try {
