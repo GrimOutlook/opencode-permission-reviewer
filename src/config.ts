@@ -238,7 +238,7 @@ export function resolveConfig(options: Record<string, unknown> | undefined): Rev
       source.maxEnrichmentChars,
       DEFAULT_CONFIG.maxEnrichmentChars,
       1_000,
-      100_000,
+      1_000_000,
     ),
     maxIntentChars: boundedInteger(
       source.maxIntentChars,

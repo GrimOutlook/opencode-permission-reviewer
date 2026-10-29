@@ -12,6 +12,10 @@ import {
 import { resolveConfig, DEFAULT_CONFIG } from "../src/config.ts"
 
 describe("JSONC parser", () => {
+  test("accepts large-script enrichment budgets and clamps excessive budgets", () => {
+    expect(resolveConfig({ maxEnrichmentChars: 400_000 }).maxEnrichmentChars).toBe(400_000)
+    expect(resolveConfig({ maxEnrichmentChars: 2_000_000 }).maxEnrichmentChars).toBe(1_000_000)
+  })
   test("parses plain JSON", () => {
     expect(parseJsonc('{"a":1}')).toEqual({ a: 1 })
   })
