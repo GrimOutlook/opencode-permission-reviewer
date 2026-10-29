@@ -31,6 +31,7 @@ export const DEFAULT_CONFIG: ReviewerConfig = {
   maxContextChars: 32_000,
   maxPartChars: 8_000,
   maxEnrichmentChars: 24_000,
+  scriptReadRoots: [],
   maxIntentChars: 8_000,
   transcriptMessages: 12,
   intentMessages: 8,
@@ -219,6 +220,12 @@ export function resolveConfig(options: Record<string, unknown> | undefined): Rev
     model,
     variant,
     outputFormat,
+    scriptReadRoots: Array.isArray(source.scriptReadRoots)
+      ? source.scriptReadRoots.filter(
+          (root): root is string =>
+            typeof root === "string" && root.startsWith("/") && !root.includes("\0"),
+        )
+      : [],
     timeoutMs: boundedInteger(source.timeoutMs, DEFAULT_CONFIG.timeoutMs, 5_000, 600_000),
     maxContextChars: boundedInteger(
       source.maxContextChars,

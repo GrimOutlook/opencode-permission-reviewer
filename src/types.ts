@@ -124,6 +124,7 @@ export interface ReviewerConfig {
   maxContextChars: number
   maxPartChars: number
   maxEnrichmentChars: number
+  scriptReadRoots: string[]
   maxIntentChars: number
   transcriptMessages: number
   intentMessages: number
