@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { enrichLocalScriptEvidence } from "../src/local-script-evidence.ts"
@@ -20,6 +20,28 @@ afterEach(async () => {
 })
 
 describe("local script evidence enrichment", () => {
+  test("reads an explicitly approved external runtime but blocks escaping symlinks", async () => {
+    const workspace = await fixture()
+    const runtime = await fixture()
+    const outside = await fixture()
+    const script = join(runtime, "check_handoffs.py")
+    await writeFile(script, 'print("approved runtime")\n')
+    const command = `python3 -B ${script} decide --repo ${workspace}`
+    const req = request({ patterns: [command], metadata: { command } })
+    expect((await enrichLocalScriptEvidence(req, workspace, workspace, 12_000)).text).toContain(
+      "outside approved enrichment roots",
+    )
+    expect(
+      (await enrichLocalScriptEvidence(req, workspace, workspace, 12_000, [runtime])).text,
+    ).toContain("approved runtime")
+    await rm(script)
+    await writeFile(join(outside, "hidden.py"), 'print("EXTERNAL-SENTINEL")\n')
+    await symlink(join(outside, "hidden.py"), script)
+    const escaped = await enrichLocalScriptEvidence(req, workspace, workspace, 12_000, [runtime])
+    expect(escaped.text).toContain("outside approved enrichment roots")
+    expect(escaped.text).not.toContain("EXTERNAL-SENTINEL")
+  })
+
   test("includes a script executed after environment activation", async () => {
     const directory = await fixture()
     const script = join(directory, "consolidate.py")

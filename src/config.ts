@@ -31,6 +31,7 @@ export const DEFAULT_CONFIG: ReviewerConfig = {
   maxContextChars: 32_000,
   maxPartChars: 8_000,
   maxEnrichmentChars: 24_000,
+  scriptReadRoots: [],
   maxIntentChars: 8_000,
   transcriptMessages: 12,
   intentMessages: 8,
@@ -215,9 +216,16 @@ export function resolveConfig(options: Record<string, unknown> | undefined): Rev
       : undefined
 
   return {
+    ...(source.mode === "automatic" || source.mode === "human-review" ? { mode: source.mode } : {}),
     model,
     variant,
     outputFormat,
+    scriptReadRoots: Array.isArray(source.scriptReadRoots)
+      ? source.scriptReadRoots.filter(
+          (root): root is string =>
+            typeof root === "string" && root.startsWith("/") && !root.includes("\0"),
+        )
+      : [],
     timeoutMs: boundedInteger(source.timeoutMs, DEFAULT_CONFIG.timeoutMs, 5_000, 600_000),
     maxContextChars: boundedInteger(
       source.maxContextChars,
@@ -230,7 +238,7 @@ export function resolveConfig(options: Record<string, unknown> | undefined): Rev
       source.maxEnrichmentChars,
       DEFAULT_CONFIG.maxEnrichmentChars,
       1_000,
-      100_000,
+      1_000_000,
     ),
     maxIntentChars: boundedInteger(
       source.maxIntentChars,
@@ -267,7 +275,12 @@ export function resolveConfig(options: Record<string, unknown> | undefined): Rev
     debug: typeof source.debug === "boolean" ? source.debug : DEFAULT_CONFIG.debug,
     enforcementMode:
       source.enforcementMode === "enforce" ? "enforce" : DEFAULT_CONFIG.enforcementMode,
-    escalationMode: resolveEscalationMode(source.escalationMode),
+    escalationMode:
+      source.mode === "automatic"
+        ? "deny"
+        : source.mode === "human-review"
+          ? "manual"
+          : resolveEscalationMode(source.escalationMode),
     maxSessionDepth: boundedInteger(source.maxSessionDepth, DEFAULT_CONFIG.maxSessionDepth, 1, 32),
     maxParentSessions: boundedInteger(
       source.maxParentSessions,

@@ -101,6 +101,7 @@ export async function enrichLocalScriptEvidence(
   directory: string,
   worktree: string,
   maxChars: number,
+  scriptReadRoots: string[] = [],
 ): Promise<LocalScriptEnrichmentResult> {
   if (request.permission !== "bash") return { text: "" }
   const segments = shellCommandSegmentsWithDirectory(sourceCommand(request), directory)
@@ -129,7 +130,10 @@ export async function enrichLocalScriptEvidence(
           // which the command cannot move.
           await includeEvidenceFile(
             path,
-            { cwd: segment.directory ?? directory, roots: [directory, worktree] },
+            {
+              cwd: segment.directory ?? directory,
+              roots: [directory, worktree, ...scriptReadRoots],
+            },
             maxChars,
           )
     records.push(recordFor(interpreter, file.path, file))

@@ -78,6 +78,7 @@ export async function assembleEvidence(
         directory: ctx.directory,
         worktree: ctx.worktree,
         maxChars: ctx.config.maxEnrichmentChars,
+        scriptReadRoots: ctx.config.scriptReadRoots,
       }),
     ),
   )

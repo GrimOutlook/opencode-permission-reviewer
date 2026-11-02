@@ -73,12 +73,13 @@ export class ReviewUiState {
   activeFor(
     sessionID: string,
     parentOf: (sessionID: string) => string | undefined,
+    manualOnly = false,
   ): ReviewUiStatus | undefined {
-    // Manual entries only drive toasts; they must not occupy the panel slot or
-    // they hide later reviews. Prefer an in-flight review over a terminal
+    // Manual entries have their own non-overlay slot so they cannot hide later
+    // reviews. Prefer an in-flight review over a terminal
     // result, and within each class pick the newest request.
     const matches = this.all().filter((status) => {
-      if (status.phase === "manual") return false
+      if ((status.phase === "manual") !== manualOnly) return false
       if (status.sessionID === sessionID) return true
       let current = parentOf(status.sessionID)
       const visited = new Set<string>()

@@ -1,0 +1,4 @@
+[install]
+# Seven days in seconds. Applies to new direct and transitive resolutions;
+# existing lockfile entries remain reproducible.
+minimumReleaseAge = 604800

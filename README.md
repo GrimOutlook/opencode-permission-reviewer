@@ -14,9 +14,14 @@ An experimental **Pi adapter** is also available on this branch. See
 
 [![OpenCode](https://img.shields.io/badge/OpenCode-%E2%89%A51.18.11-6E56CF)](https://opencode.ai)
 [![Bun](https://img.shields.io/badge/Bun-%E2%89%A51.3.0-000000)](https://bun.sh)
-[![License](https://img.shields.io/github/license/Warc0s/opencode-permission-reviewer?color=blue)](./LICENSE)
-[![Checks](https://img.shields.io/github/actions/workflow/status/Warc0s/opencode-permission-reviewer/ci.yml?branch=main&label=checks)](https://github.com/Warc0s/opencode-permission-reviewer/actions/workflows/ci.yml)
-[![Open issues](https://img.shields.io/github/issues/Warc0s/opencode-permission-reviewer)](https://github.com/Warc0s/opencode-permission-reviewer/issues)
+[![License](https://img.shields.io/github/license/GrimOutlook/opencode-permission-reviewer?color=blue)](./LICENSE)
+[![Checks](https://img.shields.io/github/actions/workflow/status/GrimOutlook/opencode-permission-reviewer/ci.yml?branch=main&label=checks)](https://github.com/GrimOutlook/opencode-permission-reviewer/actions/workflows/ci.yml)
+[![Open issues](https://img.shields.io/github/issues/GrimOutlook/opencode-permission-reviewer)](https://github.com/GrimOutlook/opencode-permission-reviewer/issues)
+
+This fork is maintained at [GrimOutlook/opencode-permission-reviewer](https://github.com/GrimOutlook/opencode-permission-reviewer),
+derived from [warc0s/opencode-permission-reviewer](https://github.com/warc0s/opencode-permission-reviewer).
+See [Contributing](./CONTRIBUTING.md), [Dependency policy](./DEPENDENCIES.md),
+and [Repository settings](./.github/REPOSITORY_SETTINGS.md) for development and maintenance.
 
 OpenCode pauses on **every** `ask` permission and waits for a keystroke — even
 for safe, routine actions. This plugin adds a Codex-Guardian-style reviewer: a
@@ -264,7 +269,7 @@ Every option is optional. Numeric/string options are clamped to safe bounds.
 | `confidenceThreshold`  | `0.7`                                                     | `0.5`–`1`                           | Minimum confidence to auto-act; below it escalates                                            |
 | `maxContextChars`      | `32000`                                                   | `4000`–`200000`                     | Total transcript evidence budget                                                              |
 | `maxPartChars`         | `8000`                                                    | `500`–`50000`                       | Per-message-part budget                                                                       |
-| `maxEnrichmentChars`   | `24000`                                                   | `1000`–`100000`                     | SSH / script / Git enrichment budget                                                          |
+| `maxEnrichmentChars`   | `24000`                                                   | `1000`–`1000000`                    | SSH / script / Git enrichment budget                                                          |
 | `maxIntentChars`       | `8000`                                                    | `1000`–`50000`                      | User-intent history budget                                                                    |
 | `transcriptMessages`   | `12`                                                      | `1`–`100`                           | Recent messages shown to the reviewer                                                         |
 | `intentMessages`       | `8`                                                       | `1`–`50`                            | Genuine user intents kept                                                                     |
@@ -416,7 +421,24 @@ by itself** (one narrow deterministic exception exists for SSH, below).
   never modified.**
 
 Only regular text files inside the working directory, the worktree, or
-`/tmp/opencode` can be included. Missing, blocked, and truncated executable
+`/tmp/opencode` can be included by default. For local interpreter scripts,
+trusted global or inline configuration can add absolute directories with
+`scriptReadRoots` (default `[]`):
+
+```jsonc
+// ~/.config/opencode/permission-reviewer.jsonc
+{
+  "scriptReadRoots": ["/home/you/.gsd-path/runtimes"],
+}
+```
+
+Project-local configuration cannot set this option. Paths must be absolute
+(no `~` expansion); symlink destinations must remain within an approved root.
+This only permits bounded script inspection, not execution approval, and does
+not expand SSH or Git evidence roots. Existing sensitive-file, text, and size
+checks still apply. Restart OpenCode after changing configuration.
+
+Missing, blocked, and truncated executable
 stdin is explicitly identified so the reviewer fails safe.
 
 The **only** deterministic SSH preflight rejection is an executable stdin file
@@ -532,3 +554,36 @@ The reviewer policy and prompt text in `src/policy.ts` are adapted from
 ## License
 
 [Apache License 2.0](./LICENSE) © 2026 Warc0s
+
+## Review modes
+
+Set `mode` in the plugin options (use the same options in `opencode.json` and
+`tui.json`) or in `~/.config/opencode/permission-reviewer.jsonc`:
+
+- `"automatic"`: every reviewed request is allowed once or denied. Questionable
+  commands, insufficient evidence, invalid reviewer output and reviewer failures
+  are denied without waiting for a human. Rejections include the reason in the
+  tool error seen by the agent, so it can correct the command or gather evidence
+  and try again. Successful approvals add no agent-context noise.
+- `"human-review"` (default): clear requests are allowed or denied automatically;
+  questionable requests remain pending for human review, with the analysis shown
+  in the permission UI. Explicit denials remain denials.
+
+Example plugin options: `{ "mode": "automatic", "model": "openai/gpt-5.6-luna" }`.
+The mode is trusted configuration: a project-local reviewer file cannot change it.
+Legacy `escalationMode` remains supported when `mode` is omitted. An explicit mode
+takes precedence over that legacy option; per-category `riskPolicy` deny settings
+can still harden human-review failures.
+
+### Runtime controls
+
+- `/permission-review-mode` or **Ctrl+Alt+P** toggles the running reviewer.
+- `/permission-review-automatic` selects automatic mode.
+- `/permission-review-human-review` selects human-review mode.
+- These actions are also available under **Permission reviewer** in the command
+  palette. The sidebar shows the server's active mode and a toast confirms changes.
+
+Runtime changes apply to the current server instance (including its sessions and
+in-flight reviews that have not decided yet). Already escalated manual prompts
+remain for you to answer. Changes are not persisted: a server restart restores the
+configured default. No restart is needed to toggle once this plugin is installed.

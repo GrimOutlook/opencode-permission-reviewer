@@ -31,7 +31,7 @@ export function resolveEscalationDisposition(
   if (result.decisionSource === "manual-superseded") return "manual"
   if (result.kind !== "escalate") return "manual"
 
-  if (config.escalationMode === "deny") return "deny"
+  if (config.mode === "automatic" || config.escalationMode === "deny") return "deny"
 
   if (category === "invalid-decision" && config.riskPolicy.onInvalidDecision === "deny") {
     return "deny"

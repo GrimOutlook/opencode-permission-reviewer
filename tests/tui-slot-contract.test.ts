@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { TuiPluginApi, TuiPluginMeta } from "@opencode-ai/plugin/tui"
-import { tui } from "./tui-loader.ts"
+import type { TuiCommand, TuiPluginApi, TuiPluginMeta } from "@opencode-ai/plugin/tui"
+import { tui, testRender } from "./tui-loader.ts"
 import { createUiStatus, encodeUiStatus } from "../src/ui-protocol.ts"
 import { request } from "./helpers.ts"
 
@@ -30,18 +30,38 @@ interface CapturedApi {
   api: TuiPluginApi
   handlers: Map<string, EventHandler[]>
   factory: (() => unknown) | undefined
+  manualFactory: (() => unknown) | undefined
   /** By-reference mode bookkeeping: a bare number would be snapshotted. */
   mode: { pushes: string[]; pops: number }
   toasts: Array<{ title?: string }>
+  commands: TuiCommand[]
+  published: Array<{ body: { properties: { command: string } } }>
 }
 
 async function captureOverlay(): Promise<CapturedApi> {
   const handlers = new Map<string, EventHandler[]>()
   const mode = { pushes: [] as string[], pops: 0 }
   const toasts: Array<{ title?: string }> = []
+  const commands: TuiCommand[] = []
+  const published: Array<{ body: { properties: { command: string } } }> = []
   let factory: (() => unknown) | undefined
+  let manualFactory: (() => unknown) | undefined
 
   const api = {
+    command: {
+      register: (cb: () => TuiCommand[]) => {
+        commands.push(...cb())
+        return () => {}
+      },
+    },
+    client: {
+      tui: {
+        publish: async (input: (typeof published)[number]) => {
+          published.push(input)
+          return { data: true }
+        },
+      },
+    },
     route: {
       current: { name: "session", params: { sessionID: "ses_main" } },
       register: () => () => {},
@@ -66,7 +86,10 @@ async function captureOverlay(): Promise<CapturedApi> {
         return () => {}
       },
     },
-    ui: { toast: (input: { title?: string }) => void toasts.push(input) },
+    ui: {
+      toast: (input: { title?: string }) => void toasts.push(input),
+      dialog: { clear: () => {} },
+    },
     state: { session: { get: () => undefined } },
     kv: { ready: true, get: () => undefined, set: () => {} },
     lifecycle: { onDispose: () => () => {} },
@@ -80,8 +103,9 @@ async function captureOverlay(): Promise<CapturedApi> {
       },
     },
     slots: {
-      register: (plugin: { slots: { app?: () => unknown } }) => {
+      register: (plugin: { slots: { app?: () => unknown; app_bottom?: () => unknown } }) => {
         factory = plugin.slots.app
+        manualFactory = plugin.slots.app_bottom
       },
     },
   } as unknown as TuiPluginApi
@@ -98,8 +122,26 @@ async function captureOverlay(): Promise<CapturedApi> {
     fingerprint: "test",
     state: "first",
   } satisfies TuiPluginMeta)
-  return { api, handlers, factory, mode, toasts }
+  return { api, handlers, factory, manualFactory, mode, toasts, commands, published }
 }
+
+test("runtime mode slash command and hotkey send a server command and confirm only on acknowledgment", async () => {
+  const captured = await captureOverlay()
+  const toggle = captured.commands.find((cmd) => cmd.slash?.name === "permission-review-mode")!
+  expect(toggle.keybind).toBe("ctrl+alt+p")
+  expect(captured.published[0]?.body.properties.command).toBe(
+    "opencode-permission-reviewer.mode.get",
+  )
+  await toggle.onSelect?.()
+  expect(captured.published.at(-1)?.body.properties.command).toBe(
+    "opencode-permission-reviewer.mode.toggle",
+  )
+  expect(captured.toasts).toHaveLength(0)
+  fire(captured, "tui.command.execute", {
+    properties: { command: "opencode-permission-reviewer.mode.changed.human-review" },
+  })
+  expect(captured.toasts.at(-1)?.title).toBe("Permission reviewer mode")
+})
 
 function fire(captured: CapturedApi, type: string, event: unknown): void {
   for (const handler of captured.handlers.get(type) ?? []) handler(event as never)
@@ -135,6 +177,41 @@ function statusEvent(
 }
 
 describe("tui overlay slot contract", () => {
+  test("manual review shows the command, escalation reason, and reviewer analysis", async () => {
+    const captured = await captureOverlay()
+    fire(captured, "permission.asked", { type: "permission.asked", properties: request() })
+    fire(
+      captured,
+      "tui.command.execute",
+      statusEvent("manual", {
+        reason: "Confidence below threshold.",
+        decision: {
+          outcome: "escalate",
+          risk_level: "high",
+          user_authorization: "unknown",
+          confidence: 0.4,
+          rationale: "This command changes remote state.",
+        },
+      }),
+    )
+    const app = await testRender(() => captured.manualFactory!() as never, {
+      width: 100,
+      height: 20,
+    })
+    try {
+      await app.flush()
+      const text = app.captureCharFrame()
+      expect(text).toContain("Manual review required")
+      expect(text).toContain("Confidence below threshold.")
+      expect(text).toContain("Reviewer analysis: This command changes remote state.")
+      expect(text).toContain("$")
+      expect(captured.mode.pushes).toHaveLength(0)
+    } finally {
+      app.renderer.destroy()
+    }
+    fire(captured, "permission.replied", { properties: { requestID: request().id } })
+    expect(() => captured.manualFactory!()).not.toThrow()
+  })
   test("registers a single app slot and subscribes to the event trio", async () => {
     const captured = await captureOverlay()
     expect(captured.factory).toBeFunction()

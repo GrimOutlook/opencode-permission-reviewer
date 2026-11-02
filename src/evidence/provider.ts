@@ -21,6 +21,7 @@ export interface EvidenceProviderInput {
   directory: string
   worktree: string
   maxChars: number
+  scriptReadRoots?: string[]
 }
 
 /**
