@@ -26,6 +26,7 @@ Create `~/.pi/agent/permission-reviewer.json` (strict JSON, not JSONC):
 {
   "model": "openai/your-reviewer-model",
   "timeoutMs": 30000,
+  "variant": "high",
   "escalationMode": "manual",
   "audit": true
 }
@@ -38,9 +39,21 @@ are deliberately not loaded. Malformed personal configuration blocks calls.
 
 Existing reviewer options such as `policy`, `riskPolicy`, and context limits
 are supported. Output is always JSON in text mode. OpenCode-specific options
-such as reviewer-session retention and `variant` do not yet have Pi equivalents. Declarative
+such as reviewer-session retention do not yet have Pi equivalents. Declarative
 `policyRules` and `enforcementMode: "enforce"` are rejected rather than silently
 ignored because their required evidence is not implemented.
+
+## Reviewer reasoning
+
+`variant` now controls reviewer reasoning through Pi's authenticated,
+provider-neutral `streamSimple` API. Supported values are `minimal`, `low`,
+`medium`, `high`, `xhigh`, and `max`; `none`/`off` disable optional thinking.
+The shared default is `max`. Non-reasoning models receive no thinking option.
+Pi translates the level to provider-specific controls and model capabilities;
+a model with mandatory reasoning may not permit disabling it. Unknown variant
+names fail safe instead of silently ignoring the requested control. Corrective
+retries use the same reasoning setting. Changes in personal configuration apply
+to subsequent reviews without restarting.
 
 ## Actor/delegation integration
 

@@ -53,11 +53,16 @@ function harness(
   const ctx = {
     cwd: process.cwd(),
     hasUI: false,
-    model: { id: "test", input: ["text"] },
+    model: { id: "test", input: ["text"], reasoning: true },
     sessionManager: { getSessionId: () => "session", getBranch: () => [] },
     modelRegistry: { complete },
     ...overrides,
   } as unknown as ExtensionContext
+  const registry = ctx.modelRegistry as unknown as {
+    complete: (...args: unknown[]) => Promise<unknown>
+    streamSimple: (...args: unknown[]) => { result: () => Promise<unknown> }
+  }
+  registry.streamSimple = (...args) => ({ result: () => registry.complete(...args) })
   return Object.assign(
     () => handler({ toolCallId: "call", toolName: "read", input: { path: "README.md" } }, ctx),
     {
@@ -365,6 +370,28 @@ describe("Pi adapter", () => {
     })
     expect(await run()).toMatchObject({ block: true })
     expect(calls).toBe(2)
+  })
+  test("reasoning controls reach provider-neutral requests, including corrective retries", async () => {
+    const options: Array<Record<string, unknown>> = []
+    const run = harness(
+      async () => ({}),
+      {
+        modelRegistry: {
+          complete: async (_model: unknown, _context: unknown, opts: Record<string, unknown>) => {
+            options.push(opts)
+            return {
+              stopReason: "stop",
+              content: [{ type: "text", text: options.length === 1 ? "invalid" : verdict }],
+            }
+          },
+        },
+      },
+      () => ({ ...config(), variant: "high" }),
+    )
+    expect(await run()).toBeUndefined()
+    expect(options).toHaveLength(2)
+    expect(options[0]?.reasoning).toBe("high")
+    expect(options[1]?.reasoning).toBe("high")
   })
   test("blocks reviewer errors", async () => {
     expect(
