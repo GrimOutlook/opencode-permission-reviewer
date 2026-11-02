@@ -219,6 +219,35 @@ describe("Pi adapter", () => {
       await rm(root, { recursive: true, force: true })
     }
   })
+  test("Git evidence describes pre-command state without staging planned targets", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-git-"))
+    try {
+      expect(Bun.spawnSync(["git", "init", "-b", "review-test", root]).exitCode).toBe(0)
+      await writeFile(join(root, "planned.txt"), "not staged yet\n")
+      let evidence = ""
+      const run = harness(async () => ({}), {
+        cwd: root,
+        modelRegistry: {
+          complete: async (
+            _model: unknown,
+            context: { messages: Array<{ content: Array<{ text?: string }> }> },
+          ) => {
+            evidence = context.messages[0]!.content[0]!.text!
+            return { stopReason: "stop", content: [{ type: "text", text: verdict }] }
+          },
+        },
+      })
+      expect(await run.tool("bash", { command: "git add planned.txt" })).toBeUndefined()
+      expect(evidence).toContain("GIT_STATE_ANALYSIS")
+      expect(evidence).toContain("review-test")
+      expect(evidence).toContain("planned.txt")
+      expect(
+        Bun.spawnSync(["git", "-C", root, "diff", "--cached", "--name-only"]).stdout.toString(),
+      ).toBe("")
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
   test("displays fail-closed errors in the transcript", async () => {
     const run = harness(
       async () => ({}),

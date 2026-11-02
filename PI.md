@@ -88,6 +88,10 @@ reason in the main transcript; `deny` also returns it as the tool's error.
   connection is made. Missing executable stdin is rejected before a reviewer
   call; other incomplete evidence remains a reviewer judgment. Audit records
   include SSH summaries with remote commands represented by hashes.
+- Relevant Git mutations receive shared bounded `GIT_STATE_ANALYSIS`: branch,
+  staged/unstaged/untracked paths, planned targets, and potential discarded
+  changes. Queries are read-only, bounded, non-interactive, and use the existing
+  hook/locking safeguards. Planned staging is never confused with current staging.
 - Recent user and tool-result images are attached as actual image blocks when
   the reviewer model advertises image support. Source-message labels link them
   to the text transcript. At most four images are forwarded, with base64 payload
@@ -122,7 +126,7 @@ reason in the main transcript; `deny` also returns it as the tool's error.
 
 ## Limitations
 
-No Git enrichment, actor/delegation lineage, ask-decision
+No actor/delegation lineage, ask-decision
 capture, status overlay, review-history UI, persistent session approvals, or
 reviewer usage aggregation has been ported yet. Treat missing evidence
 conservatively. The full OpenCode review coordinator is not used; the Pi gate
