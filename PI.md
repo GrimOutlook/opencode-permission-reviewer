@@ -69,7 +69,19 @@ reason in the main transcript; `deny` also returns it as the tool's error.
   through Pi's normal tool execution hooks are reviewed too.
 - The shared emergency brake runs before the model. The reviewer receives the
   normalized request, bounded transcript and user-intent history, and the shared
-  tenant policy. Tool results and images are not included in conversation history.
+  tenant policy. Conversation evidence includes tool calls and tool-result text
+  with tool names, call IDs, and error/completion status. Tool output remains
+  untrusted evidence, not user authorization; text uses the existing redaction
+  and truncation limits.
+- Recent user and tool-result images are attached as actual image blocks when
+  the reviewer model advertises image support. Source-message labels link them
+  to the text transcript. At most four images are forwarded, with base64 payload
+  limits of 4 MiB per image and 8 MiB total, from the `transcriptMessages` window.
+  PNG, JPEG, GIF, and WebP are supported. Text-only models, unsupported formats,
+  and over-budget images receive explicit omission markers instead.
+  **Image pixels cannot be secret-redacted**: screenshots may expose credentials
+  to the configured reviewer provider. Images are never serialized as base64
+  into textual evidence, decision entries, or the audit log.
 - The reviewer is a separate, tool-free model request, not a child agent. It
   cannot execute tools and its output is not appended to the primary transcript.
 - The existing structured decision parser and risk/authorization/confidence

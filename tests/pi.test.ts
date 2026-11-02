@@ -45,7 +45,7 @@ function harness(
   const ctx = {
     cwd: process.cwd(),
     hasUI: false,
-    model: { id: "test" },
+    model: { id: "test", input: ["text"] },
     sessionManager: { getSessionId: () => "session", getBranch: () => [] },
     modelRegistry: { complete },
     ...overrides,
@@ -94,6 +94,41 @@ describe("Pi adapter", () => {
         reason: expect.any(String),
       },
     })
+  })
+  test("forwards tool-result text and image blocks to a vision reviewer", async () => {
+    const image = { type: "image", data: "aGVsbG8=", mimeType: "image/png" }
+    let sent: { messages: Array<{ content: Array<Record<string, unknown>> }> } | undefined
+    const run = harness(async () => ({}), {
+      model: { id: "vision", input: ["text", "image"] },
+      sessionManager: {
+        getSessionId: () => "session",
+        getBranch: () => [
+          {
+            type: "message",
+            id: "result",
+            message: {
+              role: "toolResult",
+              toolName: "read",
+              toolCallId: "previous",
+              isError: false,
+              content: [{ type: "text", text: "Screenshot evidence" }, image],
+            },
+          },
+        ],
+      },
+      modelRegistry: {
+        complete: async (_model: unknown, context: NonNullable<typeof sent>) => {
+          sent = context
+          return { stopReason: "stop", content: [{ type: "text", text: verdict }] }
+        },
+      },
+    })
+    expect(await run()).toBeUndefined()
+    const content = sent!.messages[0]!.content
+    expect(content).toContainEqual(image)
+    expect(content[0]?.text).toContain("Screenshot evidence")
+    expect(content[0]?.text).toContain("role=toolResult")
+    expect(content[0]?.text).not.toContain(image.data)
   })
   test("displays fail-closed errors in the transcript", async () => {
     const run = harness(
