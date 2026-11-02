@@ -18,6 +18,7 @@ import { conversationEvidence } from "./conversation.ts"
 import { reviewerReasoning } from "./reasoning.ts"
 import { ReviewUsage } from "./usage.ts"
 import { isOrdinaryProjectRead } from "./project-reads.ts"
+import { registerAside } from "./aside.ts"
 import { startReviewProgress, observeReviewStream, type ReviewProgress } from "./progress.ts"
 import { registerActorContext, resolvePiActor, type PiActorContext } from "./actor.ts"
 import { resolveActionPurpose } from "../context/action-purpose.ts"
@@ -274,6 +275,7 @@ export default function permissionReviewer(pi: ExtensionAPI): void {
 
 export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerConfig): void {
   registerResultRenderer(pi)
+  const taskStatus = registerAside(pi)
   const effectiveConfig = registerReviewerCommands(pi, loadConfig)
   const actorContexts = registerActorContext(pi)
   const capturedAsks = registerAskDecisions(pi, effectiveConfig)
@@ -286,6 +288,7 @@ export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerC
   pi.on("tool_call", async (event, ctx) => {
     // This tool only asks the human; reviewing it could deadlock clarification.
     if (event.toolName === PI_ASK_TOOL) return undefined
+    const sessionID = ctx.sessionManager.getSessionId()
     const previous = pending
     let release!: () => void
     pending = new Promise<void>((resolve) => {
@@ -389,8 +392,11 @@ export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerC
         performance.now() - start,
         mode,
       )
-      if (result.kind !== "allow")
+      if (result.kind !== "allow") {
+        taskStatus.phase(sessionID, event.toolCallId, "blocked")
         return { block: true, reason: `Permission reviewer: ${result.reason}` }
+      }
+      taskStatus.phase(sessionID, event.toolCallId, "running")
       return undefined
     } catch (error) {
       const reason = `Permission reviewer failed: ${error instanceof Error ? error.message : String(error)}`
@@ -402,6 +408,7 @@ export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerC
         performance.now() - start,
         mode,
       )
+      taskStatus.phase(sessionID, event.toolCallId, "blocked")
       return { block: true, reason }
     } finally {
       try {
