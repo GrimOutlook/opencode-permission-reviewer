@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { widgetLines } from "./pi-ui-helpers.ts"
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { startReviewProgress, observeReviewStream, PI_REVIEW_PROGRESS } from "../src/pi/progress.ts"
 
@@ -7,9 +8,9 @@ test("live panel updates phases and elapsed time, then clears and ignores late u
   const ctx = {
     mode: "tui",
     ui: {
-      setWidget: (key: string, lines: string[] | undefined) => {
+      setWidget: (key: string, content: unknown) => {
         expect(key).toBe(PI_REVIEW_PROGRESS)
-        frames.push(lines)
+        frames.push(widgetLines(content))
       },
     },
   } as unknown as ExtensionContext
@@ -21,7 +22,7 @@ test("live panel updates phases and elapsed time, then clears and ignores late u
     const count = frames.length
     await new Promise((resolve) => setTimeout(resolve, 280))
     expect(frames.length).toBeGreaterThan(count)
-    expect(frames.at(-1)?.[0]).toContain("Permission reviewer — bash")
+    expect(frames.at(-1)?.join("\n")).toContain("Permission reviewer — bash")
   } finally {
     live.stop()
   }

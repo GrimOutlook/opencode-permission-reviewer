@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { widgetLines } from "./pi-ui-helpers.ts"
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -429,7 +430,7 @@ describe("Pi adapter", () => {
         },
         {
           mode: "tui",
-          ui: { setWidget: (_key: string, lines: string[] | undefined) => frames.push(lines) },
+          ui: { setWidget: (_key: string, content: unknown) => frames.push(widgetLines(content)) },
         },
       )
       await run()

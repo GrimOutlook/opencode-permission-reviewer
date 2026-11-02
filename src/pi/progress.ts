@@ -1,5 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { stripVTControlCharacters } from "node:util"
+import { grayReviewPanel } from "./panel.ts"
 
 export const PI_REVIEW_PROGRESS = "permission-reviewer.progress"
 export type ReviewProgress = (phase: string) => void
@@ -20,10 +21,14 @@ export function startReviewProgress(
     const spinner = ["|", "/", "-", "\\"][frame++ % 4]
     ctx.ui.setWidget(
       PI_REVIEW_PROGRESS,
-      [
-        `${spinner} Permission reviewer — ${tool} — ${((performance.now() - started) / 1000).toFixed(1)}s`,
-        phase,
-      ],
+      (_tui, theme) =>
+        grayReviewPanel(
+          [
+            `${spinner} Permission reviewer — ${tool} — ${((performance.now() - started) / 1000).toFixed(1)}s`,
+            phase,
+          ].join("\n"),
+          theme,
+        ),
       { placement: "aboveEditor" },
     )
   }

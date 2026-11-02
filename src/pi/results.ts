@@ -1,6 +1,6 @@
 import { stripVTControlCharacters } from "node:util"
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
-import { Text } from "@earendil-works/pi-tui"
+import { grayReviewPanel } from "./panel.ts"
 import { redactSecrets } from "../redact.ts"
 import type { EscalationMode, ReviewExecutionResult } from "../types.ts"
 import { formatReviewUsage, type PiReviewUsage } from "./usage.ts"
@@ -74,7 +74,7 @@ export function registerResultRenderer(pi: ExtensionAPI): void {
     ]
       .filter(Boolean)
       .join(" · ")
-    return new Text(
+    return grayReviewPanel(
       [
         theme.fg(
           color,
@@ -84,8 +84,7 @@ export function registerResultRenderer(pi: ExtensionAPI): void {
         theme.fg("muted", formatReviewUsage(result.usage)),
         displayText(result.reason),
       ].join("\n"),
-      1,
-      1,
+      theme,
     )
   })
 }

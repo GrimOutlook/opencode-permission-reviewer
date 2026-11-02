@@ -132,7 +132,7 @@ reason in the main transcript; `deny` also returns it as the tool's error.
 
 ## Live progress
 
-Interactive Pi shows a transient panel above the editor while a review is
+Interactive Pi shows a transient gray panel above the editor while a review is
 running: spinner, tool name, elapsed time, and the current phase (evidence
 collection, SSH/script/Git inspection, actor context, waiting for the model,
 reasoning activity, receiving a decision, corrective retry, manual approval,
@@ -197,13 +197,14 @@ UI-only and is not appended to model context or session history.
   cancelled call cannot be released by a late reviewer response. The provider
   is aborted on timeout, with an independent timeout race in case it ignores
   cancellation.
-- Each completed review appears in the **main transcript** with its final
+- Each completed review appears in a gray panel in the **main transcript** with its final
   allow/deny outcome, tool name, reason, elapsed time, decision source, and
   risk/confidence when available. Fail-closed configuration and audit errors
   also appear there. Results are persisted as display-only session entries,
   so they remain visible on resume without entering the model's context or
   triggering another turn. Secrets and terminal control sequences are removed
-  from displayed text.
+  from displayed text. Both the result and live panels use a dark gray background
+  on dark themes and light gray on light themes, including padding/wrapped lines.
 - Final results include provider-reported token usage: total, input/output,
   cache reads/writes, and reasoning tokens when reported (already included in
   output, never added twice). Counts include both attempts on a corrective retry.

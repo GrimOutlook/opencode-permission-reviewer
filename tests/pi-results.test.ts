@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { testReviewTheme } from "./pi-ui-helpers.ts"
 import type { EntryRenderer, ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { visibleWidth } from "@earendil-works/pi-tui"
 import {
@@ -53,7 +54,7 @@ test("renderer shows outcome, risk, confidence, and reason at narrow widths", ()
   const component = renderer(
     { data: result } as Parameters<typeof renderer>[0],
     {} as Parameters<typeof renderer>[1],
-    { fg: (_color: string, text: string) => text } as Parameters<typeof renderer>[2],
+    testReviewTheme,
   )!
   const wide = component.render(100).join("\n")
   expect(wide).toContain("Permission reviewer: ALLOW (automatic) [on escalation: ask]")
@@ -66,7 +67,7 @@ test("renderer shows outcome, risk, confidence, and reason at narrow widths", ()
   const human = renderer(
     { data: result } as Parameters<typeof renderer>[0],
     {} as Parameters<typeof renderer>[1],
-    { fg: (_color: string, text: string) => text } as Parameters<typeof renderer>[2],
+    testReviewTheme,
   )!
   expect(human.render(120).join("\n")).toContain("ALLOW (human-approved) [on escalation: ask]")
   result.outcome = "deny"
@@ -74,7 +75,7 @@ test("renderer shows outcome, risk, confidence, and reason at narrow widths", ()
   const denied = renderer(
     { data: result } as Parameters<typeof renderer>[0],
     {} as Parameters<typeof renderer>[1],
-    { fg: (_color: string, text: string) => text } as Parameters<typeof renderer>[2],
+    testReviewTheme,
   )!
   expect(denied.render(120).join("\n")).toContain("DENY [on escalation: deny]")
 })
