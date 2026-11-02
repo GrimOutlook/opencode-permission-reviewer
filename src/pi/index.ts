@@ -17,6 +17,7 @@ import { registerReviewerCommands } from "./commands.ts"
 import { conversationEvidence } from "./conversation.ts"
 import { reviewerReasoning } from "./reasoning.ts"
 import { ReviewUsage } from "./usage.ts"
+import { isOrdinaryProjectRead } from "./project-reads.ts"
 import { startReviewProgress, observeReviewStream, type ReviewProgress } from "./progress.ts"
 import { registerActorContext, resolvePiActor, type PiActorContext } from "./actor.ts"
 import { resolveActionPurpose } from "../context/action-purpose.ts"
@@ -34,10 +35,14 @@ import type {
   ReviewerConfig,
 } from "../types.ts"
 
+export interface PiReviewerConfig extends ReviewerConfig {
+  allowProjectReads?: boolean
+}
+
 /** Personal configuration only: repositories cannot weaken the reviewer. */
 export function loadPiConfig(
   path = join(homedir(), ".pi/agent/permission-reviewer.json"),
-): ReviewerConfig {
+): PiReviewerConfig {
   let options: Record<string, unknown> = {}
   try {
     const value: unknown = JSON.parse(readFileSync(path, "utf8"))
@@ -47,12 +52,15 @@ export function loadPiConfig(
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
   }
+  if (options.allowProjectReads !== undefined && typeof options.allowProjectReads !== "boolean")
+    throw new Error("allowProjectReads must be a boolean")
   const config = resolveConfig({ ...options, outputFormat: "text" })
   // These require actor/capability evidence not yet supplied by the basic port.
   if (config.enforcementMode === "enforce" || config.policyRules.length > 0)
     throw new Error("Pi adapter does not yet support declarative policy rules or enforce mode")
   return {
     ...config,
+    allowProjectReads: options.allowProjectReads !== false,
     model: typeof options.model === "string" ? config.model : "",
     auditPath: config.auditPath ?? "~/.pi/agent/permission-reviewer-audit.jsonl",
   }
@@ -291,7 +299,7 @@ export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerC
     try {
       live = startReviewProgress(ctx, event.toolName)
       stopActiveProgress = live.stop
-      const config = effectiveConfig(ctx.sessionManager.getSessionId())
+      const config: PiReviewerConfig = effectiveConfig(ctx.sessionManager.getSessionId())
       mode = config.escalationMode
       const request = piRequest(
         event.toolCallId,
@@ -302,7 +310,24 @@ export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerC
       let result: PiExecutionResult
       try {
         if (ctx.signal?.aborted) throw new Error("Tool call cancelled")
-        result = await review(request, ctx, config, actorContexts, capturedAsks, live.update, usage)
+        live.update("Checking project read scope")
+        if (config.allowProjectReads !== false && (await isOrdinaryProjectRead(request, ctx.cwd))) {
+          result = {
+            kind: "allow",
+            reason: "Read of a verified non-sensitive regular file inside the current project.",
+            decisionSource: "deterministic-policy",
+          }
+        } else {
+          result = await review(
+            request,
+            ctx,
+            config,
+            actorContexts,
+            capturedAsks,
+            live.update,
+            usage,
+          )
+        }
       } catch (error) {
         result = {
           kind: "escalate",
