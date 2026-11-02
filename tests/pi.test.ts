@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent"
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ExtensionCommandContext,
+} from "@earendil-works/pi-coding-agent"
 import { resolveConfig } from "../src/config.ts"
 import { decidePiReview, loadPiConfig, piRequest, registerPiReviewer } from "../src/pi/index.ts"
 
@@ -21,10 +25,14 @@ function harness(
   loadConfig = config,
 ) {
   let handler!: (event: unknown, ctx: ExtensionContext) => Promise<unknown>
+  let command!: Parameters<ExtensionAPI["registerCommand"]>[1]["handler"]
   const entries: Array<{ customType: string; data: Record<string, unknown> }> = []
   registerPiReviewer(
     {
       registerEntryRenderer: () => {},
+      registerCommand: (_name: string, options: { handler: typeof command }) => {
+        command = options.handler
+      },
       appendEntry: (customType: string, data: Record<string, unknown>) => {
         entries.push({ customType, data })
       },
@@ -44,7 +52,14 @@ function harness(
   } as unknown as ExtensionContext
   return Object.assign(
     () => handler({ toolCallId: "call", toolName: "read", input: { path: "README.md" } }, ctx),
-    { entries },
+    {
+      entries,
+      command: (args: string) =>
+        command(args, {
+          ...ctx,
+          ui: { ...ctx.ui, notify: () => {} },
+        } as unknown as ExtensionCommandContext),
+    },
   )
 }
 
@@ -95,6 +110,57 @@ describe("Pi adapter", () => {
       reason: "Permission reviewer failed: broken config",
       source: "failure-safe",
     })
+  })
+  test("commands switch escalation between manual approval and denial with reasoning", async () => {
+    let approvals = 0
+    const run = harness(
+      async () => ({ stopReason: "stop", content: [{ type: "text", text: "bad JSON" }] }),
+      {
+        hasUI: true,
+        ui: {
+          confirm: async () => {
+            approvals++
+            return true
+          },
+        },
+      },
+    )
+    await run.command("manual")
+    expect(await run()).toBeUndefined()
+    expect(run.entries.at(-1)?.data.mode).toBe("manual")
+    expect(approvals).toBe(1)
+    await run.command("deny")
+    expect(await run()).toMatchObject({
+      block: true,
+      reason: expect.stringContaining("Reviewer returned invalid output"),
+    })
+    expect(run.entries.at(-1)?.data.mode).toBe("deny")
+    expect(approvals).toBe(1)
+    await run.command("manual")
+    await run.command("reset")
+    expect(await run()).toMatchObject({ block: true })
+    expect(approvals).toBe(1)
+  })
+  test("manual mode does not override explicit reviewer denials", async () => {
+    let approvals = 0
+    const run = harness(
+      async () => ({
+        stopReason: "stop",
+        content: [{ type: "text", text: verdict.replace('"allow"', '"deny"') }],
+      }),
+      {
+        hasUI: true,
+        ui: {
+          confirm: async () => {
+            approvals++
+            return true
+          },
+        },
+      },
+    )
+    await run.command("manual")
+    expect(await run()).toMatchObject({ block: true })
+    expect(approvals).toBe(0)
   })
   test("blocks reviewer errors", async () => {
     expect(

@@ -37,6 +37,7 @@ test("renderer shows outcome, risk, confidence, and reason at narrow widths", ()
     "call",
     { kind: "allow", reason: "Explicitly requested", decisionSource: "llm-reviewer" },
     1500,
+    "manual",
   )
   result.risk = "low"
   result.confidence = 0.95
@@ -46,9 +47,24 @@ test("renderer shows outcome, risk, confidence, and reason at narrow widths", ()
     { fg: (_color: string, text: string) => text } as Parameters<typeof renderer>[2],
   )!
   const wide = component.render(100).join("\n")
-  expect(wide).toContain("Permission reviewer: ALLOW")
+  expect(wide).toContain("Permission reviewer: ALLOW (automatic) [on escalation: ask]")
   expect(wide).toContain("risk: low")
   expect(wide).toContain("confidence: 95%")
   expect(wide).toContain("Explicitly requested")
   for (const line of component.render(20)) expect(visibleWidth(line)).toBeLessThanOrEqual(20)
+  result.source = "manual-superseded"
+  const human = renderer(
+    { data: result } as Parameters<typeof renderer>[0],
+    {} as Parameters<typeof renderer>[1],
+    { fg: (_color: string, text: string) => text } as Parameters<typeof renderer>[2],
+  )!
+  expect(human.render(120).join("\n")).toContain("ALLOW (human-approved) [on escalation: ask]")
+  result.outcome = "deny"
+  result.mode = "deny"
+  const denied = renderer(
+    { data: result } as Parameters<typeof renderer>[0],
+    {} as Parameters<typeof renderer>[1],
+    { fg: (_color: string, text: string) => text } as Parameters<typeof renderer>[2],
+  )!
+  expect(denied.render(120).join("\n")).toContain("DENY [on escalation: deny]")
 })

@@ -10,7 +10,9 @@ import { emergencyBrakeReason } from "../emergency-brake.ts"
 import { DEFAULT_TENANT_POLICY, REVIEWER_SYSTEM_PROMPT, buildReviewerPrompt } from "../policy.ts"
 import { redactSecrets } from "../redact.ts"
 import { publishResult, registerResultRenderer } from "./results.ts"
+import { registerReviewerCommands } from "./commands.ts"
 import type {
+  EscalationMode,
   MessageWithParts,
   PermissionRequest,
   ReviewExecutionResult,
@@ -184,6 +186,7 @@ export default function permissionReviewer(pi: ExtensionAPI): void {
 
 export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerConfig): void {
   registerResultRenderer(pi)
+  const effectiveConfig = registerReviewerCommands(pi, loadConfig)
   // Serialize approvals: tool calls from the same model response may be parallel.
   let pending = Promise.resolve()
   pi.on("tool_call", async (event, ctx) => {
@@ -194,8 +197,10 @@ export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerC
     })
     await previous
     const start = performance.now()
+    let mode: EscalationMode | undefined
     try {
-      const config = loadConfig()
+      const config = effectiveConfig(ctx.sessionManager.getSessionId())
+      mode = config.escalationMode
       const request = piRequest(
         event.toolCallId,
         ctx.sessionManager.getSessionId(),
@@ -225,7 +230,7 @@ export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerC
         result = {
           ...result,
           kind: approved ? "allow" : "deny",
-          reason: `${approved ? "Manually approved" : "Escalation not approved"}: ${result.reason}`,
+          reason: `${approved ? "Manually approved" : config.escalationMode === "deny" ? "Denied by escalation policy" : "Escalation not approved"}: ${result.reason}`,
           ...(approved ? { decisionSource: "manual-superseded" as const } : {}),
         }
       }
@@ -251,7 +256,7 @@ export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerC
             }
           : {}),
       })
-      publishResult(pi, event.toolName, event.toolCallId, result, performance.now() - start)
+      publishResult(pi, event.toolName, event.toolCallId, result, performance.now() - start, mode)
       if (result.kind !== "allow")
         return { block: true, reason: `Permission reviewer: ${result.reason}` }
       return undefined
@@ -263,6 +268,7 @@ export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerC
         event.toolCallId,
         { kind: "deny", reason, decisionSource: "failure-safe" },
         performance.now() - start,
+        mode,
       )
       return { block: true, reason }
     } finally {

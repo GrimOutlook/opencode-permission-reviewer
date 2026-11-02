@@ -2,7 +2,7 @@ import { stripVTControlCharacters } from "node:util"
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Text } from "@earendil-works/pi-tui"
 import { redactSecrets } from "../redact.ts"
-import type { ReviewExecutionResult } from "../types.ts"
+import type { EscalationMode, ReviewExecutionResult } from "../types.ts"
 
 export const PI_REVIEW_RESULT = "permission-reviewer.result"
 
@@ -13,6 +13,7 @@ export interface PiReviewResult {
   reason: string
   durationMs: number
   source: string
+  mode?: EscalationMode
   risk?: string
   confidence?: number
 }
@@ -32,6 +33,7 @@ export function reviewResultEntry(
   toolCallId: string,
   result: ReviewExecutionResult,
   durationMs: number,
+  mode?: EscalationMode,
 ): PiReviewResult {
   return {
     toolName: displayText(toolName),
@@ -39,6 +41,7 @@ export function reviewResultEntry(
     outcome: result.kind === "allow" ? "allow" : "deny",
     reason: displayText(result.reason),
     durationMs,
+    ...(mode ? { mode } : {}),
     source: result.decisionSource ?? "failure-safe",
     ...(result.decision
       ? { risk: result.decision.risk_level, confidence: result.decision.confidence }
@@ -51,6 +54,11 @@ export function registerResultRenderer(pi: ExtensionAPI): void {
     const result = entry.data
     if (!result) return undefined
     const color = result.outcome === "allow" ? "success" : "error"
+    const outcome =
+      result.outcome === "allow"
+        ? `ALLOW (${result.source === "manual-superseded" ? "human-approved" : "automatic"})`
+        : "DENY"
+    const escalation = result.mode === "manual" ? "ask" : (result.mode ?? "unknown")
     const summary = [
       result.risk ? `risk: ${result.risk}` : undefined,
       result.confidence === undefined
@@ -65,7 +73,7 @@ export function registerResultRenderer(pi: ExtensionAPI): void {
       [
         theme.fg(
           color,
-          `Permission reviewer: ${result.outcome.toUpperCase()} — ${displayText(result.toolName)}`,
+          `Permission reviewer: ${outcome} [on escalation: ${escalation}] — ${displayText(result.toolName)}`,
         ),
         theme.fg("muted", summary),
         displayText(result.reason),
@@ -83,6 +91,10 @@ export function publishResult(
   toolCallId: string,
   result: ReviewExecutionResult,
   durationMs: number,
+  mode?: EscalationMode,
 ): void {
-  pi.appendEntry(PI_REVIEW_RESULT, reviewResultEntry(toolName, toolCallId, result, durationMs))
+  pi.appendEntry(
+    PI_REVIEW_RESULT,
+    reviewResultEntry(toolName, toolCallId, result, durationMs, mode),
+  )
 }

@@ -43,6 +43,25 @@ profiles do not have Pi equivalents in this first pass. Declarative
 `policyRules` and `enforcementMode: "enforce"` are rejected rather than silently
 ignored because their required evidence is not implemented.
 
+## Commands
+
+Use these commands to control how **questionable calls (escalations)** are handled:
+
+| Command                       | Behavior                                                                               |
+| ----------------------------- | -------------------------------------------------------------------------------------- |
+| `/permission-reviewer manual` | Ask for your approval; deny if no approval UI is available.                            |
+| `/permission-reviewer deny`   | Deny without prompting, returning the reviewer's reasoning to the agent.               |
+| `/permission-reviewer status` | Show the effective mode and whether it comes from configuration or a session override. |
+| `/permission-reviewer reset`  | Remove the session override and use personal configuration again.                      |
+| `/permission-reviewer`        | Same as `status`.                                                                      |
+
+Overrides apply only to the current session and subsequent reviews. They are
+in-memory: reloading/restarting the extension clears them. To choose a lasting
+default, set `escalationMode` in the personal configuration above. Already-running
+reviews keep their original mode. Explicit reviewer denials and emergency-brake
+blocks remain blocked in either mode. Both modes still display the result and
+reason in the main transcript; `deny` also returns it as the tool's error.
+
 ## Behavior
 
 - **Every model-issued tool call is reviewed**, including read-only and custom
