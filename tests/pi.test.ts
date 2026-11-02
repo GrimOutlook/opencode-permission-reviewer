@@ -186,6 +186,39 @@ describe("Pi adapter", () => {
       await rm(root, { recursive: true, force: true })
     }
   })
+  test("SSH evidence reaches reviewer; missing executable stdin is rejected before review", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-ssh-"))
+    try {
+      await writeFile(join(root, "script.py"), 'print("SSH_STDIN_EVIDENCE")')
+      let evidence = ""
+      let calls = 0
+      const run = harness(async () => ({}), {
+        cwd: root,
+        modelRegistry: {
+          complete: async (
+            _model: unknown,
+            context: { messages: Array<{ content: Array<{ text?: string }> }> },
+          ) => {
+            calls++
+            evidence = context.messages[0]!.content[0]!.text!
+            return { stopReason: "stop", content: [{ type: "text", text: verdict }] }
+          },
+        },
+      })
+      expect(
+        await run.tool("bash", { command: "cat script.py | ssh -p 2222 user@host python3 -" }),
+      ).toBeUndefined()
+      expect(evidence).toContain("SSH_ANALYSIS")
+      expect(evidence).toContain("SSH_STDIN_EVIDENCE")
+      expect(evidence).toContain("2222")
+      expect(
+        await run.tool("bash", { command: "cat absent.py | ssh user@host python3 -" }),
+      ).toMatchObject({ block: true })
+      expect(calls).toBe(1)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
   test("displays fail-closed errors in the transcript", async () => {
     const run = harness(
       async () => ({}),

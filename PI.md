@@ -83,6 +83,11 @@ reason in the main transcript; `deny` also returns it as the tool's error.
   scripts are marked in the evidence, not automatically approved or denied.
   Scripts are never executed by the inspector. Content uses existing redaction
   and `maxEnrichmentChars` limits.
+- SSH commands receive the shared bounded `SSH_ANALYSIS`: destination/options,
+  remote-command signals, and safe local executable-stdin inspection. No SSH
+  connection is made. Missing executable stdin is rejected before a reviewer
+  call; other incomplete evidence remains a reviewer judgment. Audit records
+  include SSH summaries with remote commands represented by hashes.
 - Recent user and tool-result images are attached as actual image blocks when
   the reviewer model advertises image support. Source-message labels link them
   to the text transcript. At most four images are forwarded, with base64 payload
@@ -117,7 +122,7 @@ reason in the main transcript; `deny` also returns it as the tool's error.
 
 ## Limitations
 
-No SSH/Git enrichment, actor/delegation lineage, ask-decision
+No Git enrichment, actor/delegation lineage, ask-decision
 capture, status overlay, review-history UI, persistent session approvals, or
 reviewer usage aggregation has been ported yet. Treat missing evidence
 conservatively. The full OpenCode review coordinator is not used; the Pi gate
