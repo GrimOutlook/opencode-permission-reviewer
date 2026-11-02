@@ -26,6 +26,7 @@ export default defineConfig({
   external: [
     "@earendil-works/pi-coding-agent",
     "@earendil-works/pi-tui",
+    "typebox",
     "@opencode-ai/plugin",
     "@opencode-ai/plugin/tui",
     "@opencode-ai/sdk",

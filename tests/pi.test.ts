@@ -37,6 +37,7 @@ function harness(
         on: (name: string, listener: (payload: unknown) => void) => listeners.set(name, listener),
       },
       registerEntryRenderer: () => {},
+      registerTool: () => {},
       registerCommand: (_name: string, options: { handler: typeof command }) => {
         command = options.handler
       },

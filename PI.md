@@ -38,8 +38,7 @@ are deliberately not loaded. Malformed personal configuration blocks calls.
 
 Existing reviewer options such as `policy`, `riskPolicy`, and context limits
 are supported. Output is always JSON in text mode. OpenCode-specific options
-such as reviewer-session retention, `variant`, and ask-decision capture do not
-yet have Pi equivalents. Declarative
+such as reviewer-session retention and `variant` do not yet have Pi equivalents. Declarative
 `policyRules` and `enforcementMode: "enforce"` are rejected rather than silently
 ignored because their required evidence is not implemented.
 
@@ -73,6 +72,31 @@ prompts stay separate from original human intent; without parent human evidence,
 a delegated task has no recovered direct user authorization. Fork ancestry is
 not assumed to mean delegation. This evidence does not enable declarative policy
 enforcement, which remains unsupported.
+
+## User-question capture
+
+The `permission_reviewer_ask` tool asks a scoped question using Pi's input or
+selection UI and captures the actual user answer (or dismissal). It performs no
+filesystem/network operations and bypasses the review gate so clarification
+cannot deadlock. Headless/cancelled questions fail closed. `askDecisions: false`
+disables capture and evidence inclusion, not the ability to ask a question.
+
+Other trusted question extensions can forward actual UI answers with:
+
+```ts
+pi.events.emit("permission-reviewer:ask-decision", {
+  sessionID,
+  question: "Deploy to which environment?",
+  answer: "Staging only",
+})
+```
+
+Pi's general UI prompt events do not expose answers, so arbitrary third-party
+question dialogs cannot be captured automatically. Never forward model-authored
+tool output as a user answer. Captures are redacted, bounded, in-memory, and
+scoped to the requesting session and resolved ancestors, never siblings. They
+are evidence about the specific question, not blanket permission. Recent scoped
+answers appear in `USER_ASK_DECISIONS` and audit records. Reload clears captures.
 
 ## Commands
 
@@ -157,8 +181,7 @@ reason in the main transcript; `deny` also returns it as the tool's error.
 
 ## Limitations
 
-No native cross-extension subagent discovery, ask-decision
-capture, status overlay, review-history UI, persistent session approvals, or
+No native cross-extension subagent discovery, status overlay, review-history UI, persistent session approvals, or
 reviewer usage aggregation has been ported yet. Treat missing evidence
 conservatively. The full OpenCode review coordinator is not used; the Pi gate
 shares its lower-level prompt, parsing, risk gates, emergency brake, redaction,
