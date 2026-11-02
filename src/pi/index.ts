@@ -16,6 +16,7 @@ import { publishResult, registerResultRenderer } from "./results.ts"
 import { registerReviewerCommands } from "./commands.ts"
 import { conversationEvidence } from "./conversation.ts"
 import { reviewerReasoning } from "./reasoning.ts"
+import { startReviewProgress, observeReviewStream, type ReviewProgress } from "./progress.ts"
 import { registerActorContext, resolvePiActor, type PiActorContext } from "./actor.ts"
 import { resolveActionPurpose } from "../context/action-purpose.ts"
 import {
@@ -101,7 +102,9 @@ async function review(
   config: ReviewerConfig,
   actorContexts: ReadonlyMap<string, PiActorContext>,
   capturedAsks: PiAskDecisions,
+  progress: ReviewProgress,
 ): Promise<PiExecutionResult> {
+  progress("Checking emergency brake")
   const brake = emergencyBrakeReason(request)
   if (brake) return { kind: "deny", reason: brake, decisionSource: "emergency-brake" }
   const model = config.model
@@ -116,7 +119,9 @@ async function review(
     : ctx.model
   if (!model) throw new Error("Reviewer model unavailable")
   const reasoningOptions = reviewerReasoning(config.variant, model)
+  progress("Collecting conversation evidence")
   const { messages, images } = conversationEvidence(ctx, config, model.input.includes("image"))
+  progress("Inspecting SSH evidence")
   const ssh = await enrichSshEvidence(request, ctx.cwd, ctx.cwd, config.maxEnrichmentChars)
   if (ssh.preflightDenial)
     return {
@@ -125,14 +130,17 @@ async function review(
       decisionSource: "deterministic-policy",
       ssh: ssh.audit,
     }
+  progress("Inspecting local scripts")
   const localScript = await enrichLocalScriptEvidence(
     request,
     ctx.cwd,
     ctx.cwd,
     config.maxEnrichmentChars,
   )
+  progress("Inspecting Git state")
   const git = await enrichGitEvidence(request, ctx.cwd, config.maxEnrichmentChars, ctx.cwd)
   if (ctx.signal?.aborted) throw new Error("Tool call cancelled")
+  progress("Resolving actor, delegation, and user answers")
   const actor = resolvePiActor(request, messages, config, actorContexts)
   const askDecisions = scopedAskDecisions(
     capturedAsks,
@@ -180,9 +188,10 @@ async function review(
     // Race as well as abort: a provider ignoring cancellation must not release the gate.
     const complete = async (retry: boolean): Promise<string> => {
       if (controller.signal.aborted) throw new Error("Tool call cancelled")
+      progress(`${retry ? "Retrying malformed decision" : "Waiting for reviewer"} — ${model.id}`)
       const response = await Promise.race([
-        ctx.modelRegistry
-          .streamSimple(
+        observeReviewStream(
+          ctx.modelRegistry.streamSimple(
             model,
             {
               systemPrompt: REVIEWER_SYSTEM_PROMPT,
@@ -219,8 +228,9 @@ async function review(
               tools: [],
             },
             { signal: controller.signal, ...reasoningOptions },
-          )
-          .result(),
+          ),
+          progress,
+        ),
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
             controller.abort()
@@ -257,6 +267,10 @@ export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerC
   const capturedAsks = registerAskDecisions(pi, effectiveConfig)
   // Serialize approvals: tool calls from the same model response may be parallel.
   let pending = Promise.resolve()
+  let stopActiveProgress: (() => void) | undefined
+  pi.on("session_shutdown", async () => {
+    stopActiveProgress?.()
+  })
   pi.on("tool_call", async (event, ctx) => {
     // This tool only asks the human; reviewing it could deadlock clarification.
     if (event.toolName === PI_ASK_TOOL) return undefined
@@ -268,7 +282,10 @@ export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerC
     await previous
     const start = performance.now()
     let mode: EscalationMode | undefined
+    let live: ReturnType<typeof startReviewProgress> = { update: () => {}, stop: () => {} }
     try {
+      live = startReviewProgress(ctx, event.toolName)
+      stopActiveProgress = live.stop
       const config = effectiveConfig(ctx.sessionManager.getSessionId())
       mode = config.escalationMode
       const request = piRequest(
@@ -280,7 +297,7 @@ export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerC
       let result: PiExecutionResult
       try {
         if (ctx.signal?.aborted) throw new Error("Tool call cancelled")
-        result = await review(request, ctx, config, actorContexts, capturedAsks)
+        result = await review(request, ctx, config, actorContexts, capturedAsks, live.update)
       } catch (error) {
         result = {
           kind: "escalate",
@@ -289,6 +306,11 @@ export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerC
         }
       }
       if (result.kind === "escalate") {
+        live.update(
+          config.escalationMode === "manual" && ctx.hasUI
+            ? "Awaiting your approval"
+            : "Applying escalation denial policy",
+        )
         const approved =
           config.escalationMode === "manual" &&
           ctx.hasUI &&
@@ -306,6 +328,7 @@ export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerC
       }
       if (ctx.signal?.aborted)
         result = { kind: "deny", reason: "Tool call cancelled", decisionSource: "failure-safe" }
+      live.update("Recording decision")
       await createAuditWriter(config)?.({
         schemaVersion: 2,
         timestamp: new Date().toISOString(),
@@ -344,7 +367,12 @@ export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerC
       )
       return { block: true, reason }
     } finally {
-      release()
+      try {
+        live.stop()
+      } finally {
+        stopActiveProgress = undefined
+        release()
+      }
     }
   })
 }

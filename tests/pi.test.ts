@@ -62,7 +62,12 @@ function harness(
     complete: (...args: unknown[]) => Promise<unknown>
     streamSimple: (...args: unknown[]) => { result: () => Promise<unknown> }
   }
-  registry.streamSimple = (...args) => ({ result: () => registry.complete(...args) })
+  registry.streamSimple = (...args) => ({
+    result: () => registry.complete(...args),
+    async *[Symbol.asyncIterator]() {
+      yield { type: "start" }
+    },
+  })
   return Object.assign(
     () => handler({ toolCallId: "call", toolName: "read", input: { path: "README.md" } }, ctx),
     {
@@ -392,6 +397,32 @@ describe("Pi adapter", () => {
     expect(options).toHaveLength(2)
     expect(options[0]?.reasoning).toBe("high")
     expect(options[1]?.reasoning).toBe("high")
+  })
+  test("live progress shows evidence and retry phases and clears on completion or failure", async () => {
+    for (const fail of [false, true]) {
+      const frames: Array<string[] | undefined> = []
+      let calls = 0
+      const run = harness(
+        async () => {
+          if (fail) throw new Error("offline")
+          calls++
+          return {
+            stopReason: "stop",
+            content: [{ type: "text", text: calls === 1 ? "invalid" : verdict }],
+          }
+        },
+        {
+          mode: "tui",
+          ui: { setWidget: (_key: string, lines: string[] | undefined) => frames.push(lines) },
+        },
+      )
+      await run()
+      const text = frames.flatMap((lines) => lines ?? []).join("\n")
+      expect(text).toContain("Collecting conversation evidence")
+      expect(text).toContain("Waiting for reviewer")
+      if (!fail) expect(text).toContain("Retrying malformed decision")
+      expect(frames.at(-1)).toBeUndefined()
+    }
   })
   test("blocks reviewer errors", async () => {
     expect(

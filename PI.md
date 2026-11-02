@@ -130,6 +130,20 @@ reviews keep their original mode. Explicit reviewer denials and emergency-brake
 blocks remain blocked in either mode. Both modes still display the result and
 reason in the main transcript; `deny` also returns it as the tool's error.
 
+## Live progress
+
+Interactive Pi shows a transient panel above the editor while a review is
+running: spinner, tool name, elapsed time, and the current phase (evidence
+collection, SSH/script/Git inspection, actor context, waiting for the model,
+reasoning activity, receiving a decision, corrective retry, manual approval,
+or recording the result). The panel updates while waiting, not just when the
+review completes. It never displays private reasoning, raw evidence, or partial
+verdict text. The completed decision remains in the main transcript as before.
+
+The panel clears on completion, errors, timeouts, cancellation, and session
+shutdown. Print/JSON/RPC modes do not create terminal widgets. Live activity is
+UI-only and is not appended to model context or session history.
+
 ## Behavior
 
 - **Every model-issued tool call is reviewed**, including read-only and custom
@@ -196,7 +210,7 @@ reason in the main transcript; `deny` also returns it as the tool's error.
 
 ## Limitations
 
-No native cross-extension subagent discovery, status overlay, review-history UI, persistent session approvals, or
+No native cross-extension subagent discovery, review-history UI, persistent session approvals, or
 reviewer usage aggregation has been ported yet. Treat missing evidence
 conservatively. The full OpenCode review coordinator is not used; the Pi gate
 shares its lower-level prompt, parsing, risk gates, emergency brake, redaction,
