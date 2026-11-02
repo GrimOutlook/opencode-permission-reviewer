@@ -159,8 +159,10 @@ reason in the main transcript; `deny` also returns it as the tool's error.
 - The reviewer is a separate, tool-free model request, not a child agent. It
   cannot execute tools and its output is not appended to the primary transcript.
 - The existing structured decision parser and risk/authorization/confidence
-  gates determine automatic approval. Invalid/truncated output, errors, and
-  timeouts escalate rather than auto-approve.
+  gates determine automatic approval. Malformed text gets one corrective retry
+  against the same evidence. Valid denials/escalations, provider errors, and
+  truncated/aborted responses are not retried. Each attempt has `timeoutMs`;
+  a second invalid response, errors, or timeouts escalate rather than auto-approve.
 - Manual escalation uses Pi's confirmation UI when available. `escalationMode:
 "deny"` or an unavailable UI denies escalation. Explicit reviewer denials and
   emergency-brake denials do not offer an override in this extension.

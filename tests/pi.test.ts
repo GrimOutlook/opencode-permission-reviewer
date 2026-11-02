@@ -321,6 +321,51 @@ describe("Pi adapter", () => {
     expect(await run()).toMatchObject({ block: true })
     expect(approvals).toBe(0)
   })
+  test("retries malformed output once with corrective instructions", async () => {
+    let calls = 0
+    let retryPrompt = ""
+    const run = harness(async () => ({}), {
+      modelRegistry: {
+        complete: async (
+          _model: unknown,
+          context: { messages: Array<{ content: Array<{ text?: string }> }> },
+        ) => {
+          calls++
+          retryPrompt = context.messages[0]!.content.map((part) => part.text ?? "").join("\n")
+          return {
+            stopReason: "stop",
+            content: [{ type: "text", text: calls === 1 ? "Draft: " + verdict : verdict }],
+          }
+        },
+      },
+    })
+    expect(await run()).toBeUndefined()
+    expect(calls).toBe(2)
+    expect(retryPrompt).toContain("previous response was not a valid decision")
+  })
+  test("does not retry valid denials or valid escalations", async () => {
+    for (const outcome of ["deny", "escalate"]) {
+      let calls = 0
+      const run = harness(async () => {
+        calls++
+        return {
+          stopReason: "stop",
+          content: [{ type: "text", text: verdict.replace('"allow"', JSON.stringify(outcome)) }],
+        }
+      })
+      expect(await run()).toMatchObject({ block: true })
+      expect(calls).toBe(1)
+    }
+  })
+  test("invalid output retry is bounded to two attempts", async () => {
+    let calls = 0
+    const run = harness(async () => {
+      calls++
+      return { stopReason: "stop", content: [{ type: "text", text: "invalid" }] }
+    })
+    expect(await run()).toMatchObject({ block: true })
+    expect(calls).toBe(2)
+  })
   test("blocks reviewer errors", async () => {
     expect(
       await harness(async () => {
