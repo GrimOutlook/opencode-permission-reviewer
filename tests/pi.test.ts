@@ -9,6 +9,7 @@ import type {
   ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent"
 import { resolveConfig } from "../src/config.ts"
+import { PI_REVIEWER_SYSTEM_PROMPT, REVIEWER_SYSTEM_PROMPT } from "../src/policy.ts"
 import { decidePiReview, loadPiConfig, piRequest, registerPiReviewer } from "../src/pi/index.ts"
 
 const verdict = JSON.stringify({
@@ -98,6 +99,26 @@ describe("Pi adapter", () => {
     expect(decidePiReview(verdict, config()).kind).toBe("allow")
     expect(decidePiReview(verdict.replace('"low"', '"critical"'), config()).kind).not.toBe("allow")
     expect(decidePiReview("not JSON", config()).kind).toBe("escalate")
+  })
+  test("Pi sends a host-specific prompt without OpenCode ask-classification assumptions", async () => {
+    let systemPrompt = ""
+    const run = harness(async () => ({}), {
+      modelRegistry: {
+        complete: async (_model: unknown, context: { systemPrompt: string }) => {
+          systemPrompt = context.systemPrompt
+          return { stopReason: "stop", content: [{ type: "text", text: verdict }] }
+        },
+      },
+    })
+    expect(await run()).toBeUndefined()
+    expect(systemPrompt).toBe(PI_REVIEWER_SYSTEM_PROMPT)
+    expect(systemPrompt).toContain("Pi reviews tool calls directly")
+    expect(systemPrompt).toContain("Never override an explicit policy deny")
+    expect(systemPrompt).not.toContain("OpenCode")
+    expect(systemPrompt).not.toContain("already classified as ask")
+    expect(REVIEWER_SYSTEM_PROMPT).toContain(
+      "Never convert an explicit OpenCode deny into allow. This reviewer only sees actions already classified as ask.",
+    )
   })
   test("allows a valid completed review", async () => {
     const run = harness(async () => ({

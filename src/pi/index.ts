@@ -10,7 +10,7 @@ import { emergencyBrakeReason } from "../emergency-brake.ts"
 import { enrichLocalScriptEvidence } from "../local-script-evidence.ts"
 import { enrichGitEvidence } from "../git-evidence.ts"
 import { enrichSshEvidence, type SshAuditSummary } from "../ssh-evidence.ts"
-import { DEFAULT_TENANT_POLICY, REVIEWER_SYSTEM_PROMPT, buildReviewerPrompt } from "../policy.ts"
+import { DEFAULT_TENANT_POLICY, PI_REVIEWER_SYSTEM_PROMPT, buildReviewerPrompt } from "../policy.ts"
 import { redactSecrets } from "../redact.ts"
 import { publishResult, registerResultRenderer } from "./results.ts"
 import { registerReviewerCommands } from "./commands.ts"
@@ -197,7 +197,7 @@ async function review(
           ctx.modelRegistry.streamSimple(
             model,
             {
-              systemPrompt: REVIEWER_SYSTEM_PROMPT,
+              systemPrompt: PI_REVIEWER_SYSTEM_PROMPT,
               messages: [
                 {
                   role: "user",
