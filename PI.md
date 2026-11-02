@@ -38,10 +38,41 @@ are deliberately not loaded. Malformed personal configuration blocks calls.
 
 Existing reviewer options such as `policy`, `riskPolicy`, and context limits
 are supported. Output is always JSON in text mode. OpenCode-specific options
-such as reviewer-session retention, `variant`, ask-decision capture, and actor
-profiles do not have Pi equivalents in this first pass. Declarative
+such as reviewer-session retention, `variant`, and ask-decision capture do not
+yet have Pi equivalents. Declarative
 `policyRules` and `enforcementMode: "enforce"` are rejected rather than silently
 ignored because their required evidence is not implemented.
+
+## Actor/delegation integration
+
+Current-session human text is recovered automatically. Pi does not define a
+universal subagent protocol, so actor identity and parent links stay explicitly
+unknown unless a trusted orchestration extension supplies them:
+
+```ts
+pi.events.emit("permission-reviewer:actor-context", {
+  sessionID: childSessionID,
+  agentName: "builder",
+  parentSessionID: parentSessionID,
+  delegatedTask: "Implement the requested fix",
+})
+pi.events.emit("permission-reviewer:actor-context", {
+  sessionID: parentSessionID,
+  parentSessionID: null, // explicitly known root
+  userIntent: ["Original human request, not an agent-generated task"],
+})
+```
+
+Send these events in the reviewer host process (forward child context through
+your orchestrator). Context is in-memory, bounded to 500 sessions, and must be
+re-emitted after reload. Only trusted extension events supply identity; tool
+results and model claims cannot. `actorProfiles` maps supplied names to profiles.
+Ancestry traversal is bounded by `maxSessionDepth`/`maxParentSessions`, detects
+cycles, and marks missing ancestry. Agent-authored delegation and local child
+prompts stay separate from original human intent; without parent human evidence,
+a delegated task has no recovered direct user authorization. Fork ancestry is
+not assumed to mean delegation. This evidence does not enable declarative policy
+enforcement, which remains unsupported.
 
 ## Commands
 
@@ -126,7 +157,7 @@ reason in the main transcript; `deny` also returns it as the tool's error.
 
 ## Limitations
 
-No actor/delegation lineage, ask-decision
+No native cross-extension subagent discovery, ask-decision
 capture, status overlay, review-history UI, persistent session approvals, or
 reviewer usage aggregation has been ported yet. Treat missing evidence
 conservatively. The full OpenCode review coordinator is not used; the Pi gate

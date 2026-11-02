@@ -29,9 +29,13 @@ function harness(
 ) {
   let handler!: (event: unknown, ctx: ExtensionContext) => Promise<unknown>
   let command!: Parameters<ExtensionAPI["registerCommand"]>[1]["handler"]
+  const listeners = new Map<string, (payload: unknown) => void>()
   const entries: Array<{ customType: string; data: Record<string, unknown> }> = []
   registerPiReviewer(
     {
+      events: {
+        on: (name: string, listener: (payload: unknown) => void) => listeners.set(name, listener),
+      },
       registerEntryRenderer: () => {},
       registerCommand: (_name: string, options: { handler: typeof command }) => {
         command = options.handler
@@ -57,6 +61,7 @@ function harness(
     () => handler({ toolCallId: "call", toolName: "read", input: { path: "README.md" } }, ctx),
     {
       entries,
+      emit: (name: string, payload: unknown) => listeners.get(name)?.(payload),
       tool: (toolName: string, input: Record<string, unknown>) =>
         handler({ toolCallId: "call", toolName, input }, ctx),
       command: (args: string) =>
