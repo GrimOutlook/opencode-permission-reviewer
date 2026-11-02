@@ -10,7 +10,13 @@ import type {
 } from "@earendil-works/pi-coding-agent"
 import { resolveConfig } from "../src/config.ts"
 import { PI_REVIEWER_SYSTEM_PROMPT, REVIEWER_SYSTEM_PROMPT } from "../src/policy.ts"
-import { decidePiReview, loadPiConfig, piRequest, registerPiReviewer } from "../src/pi/index.ts"
+import {
+  decidePiReview,
+  loadPiConfig,
+  piRequest,
+  registerPiReviewer,
+  type PiReviewerConfig,
+} from "../src/pi/index.ts"
 
 const verdict = JSON.stringify({
   version: 2,
@@ -22,12 +28,16 @@ const verdict = JSON.stringify({
   rationale: "Explicitly requested",
   confidence: 0.99,
 })
-const config = () => ({ ...resolveConfig({ audit: false, escalationMode: "deny" }), model: "" })
+const config = () => ({
+  ...resolveConfig({ audit: false, escalationMode: "deny" }),
+  model: "",
+  allowProjectReads: false,
+})
 
 function harness(
   complete: () => Promise<unknown>,
   overrides: Record<string, unknown> = {},
-  loadConfig = config,
+  loadConfig: () => PiReviewerConfig = config,
 ) {
   let handler!: (event: unknown, ctx: ExtensionContext) => Promise<unknown>
   let command!: Parameters<ExtensionAPI["registerCommand"]>[1]["handler"]
@@ -119,6 +129,46 @@ describe("Pi adapter", () => {
     expect(REVIEWER_SYSTEM_PROMPT).toContain(
       "Never convert an explicit OpenCode deny into allow. This reviewer only sees actions already classified as ask.",
     )
+  })
+  test("ordinary project reads bypass the model by default but remain visible with zero tokens", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-project-read-"))
+    try {
+      await writeFile(join(root, "README.md"), "Project documentation")
+      await writeFile(join(root, ".env"), "SECRET=not-for-fast-path")
+      let calls = 0
+      const run = harness(
+        async () => {
+          calls++
+          return { stopReason: "stop", content: [{ type: "text", text: verdict }] }
+        },
+        { cwd: root },
+        () => {
+          return { ...resolveConfig({ audit: false, escalationMode: "deny" }), model: "" }
+        },
+      )
+      expect(await run.tool("read", { path: "README.md" })).toBeUndefined()
+      expect(calls).toBe(0)
+      expect(run.entries.at(-1)?.data).toMatchObject({
+        outcome: "allow",
+        source: "deterministic-policy",
+        usage: { attempts: 0, totalTokens: 0 },
+      })
+      expect(await run.tool("read", { path: ".env" })).toBeUndefined()
+      expect(calls).toBe(1)
+      expect(await run.tool("bash", { command: "cat README.md" })).toBeUndefined()
+      expect(calls).toBe(2)
+      const strict = harness(
+        async () => {
+          calls++
+          return { stopReason: "stop", content: [{ type: "text", text: verdict }] }
+        },
+        { cwd: root },
+      )
+      expect(await strict.tool("read", { path: "README.md" })).toBeUndefined()
+      expect(calls).toBe(3)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
   test("allows a valid completed review", async () => {
     const run = harness(async () => ({

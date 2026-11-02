@@ -144,11 +144,35 @@ The panel clears on completion, errors, timeouts, cancellation, and session
 shutdown. Print/JSON/RPC modes do not create terminal widgets. Live activity is
 UI-only and is not appended to model context or session history.
 
+## Project reads
+
+Ordinary `read` calls inside Pi's current working directory are allowed by
+**default without a model call**. Both the lexical path and symlink-resolved
+path must stay inside that directory, and the target must be an existing regular
+file. In-project symlinks are allowed only when their target passes the same
+checks. Sensitive paths (including `.env*`, secrets/credentials directories,
+private-key formats, `.git`, `.pi`, and credential/config directories), external
+files, ambiguous/expanded path spellings, missing files, and directories still
+go through normal review. Windows keeps normal review because its additional
+path-normalization rules are not implemented in this fast path.
+
+To review all reads again, set `"allowProjectReads": false` in your personal
+configuration. The default applies regardless of manual/deny escalation mode.
+Automatic project-read decisions still appear in the transcript and audit log
+as `deterministic-policy`, with zero reviewer tokens. This is a path-based
+guardrail, not secret-content scanning or an atomic filesystem sandbox; a source
+file can still contain secrets, and concurrent filesystem changes can race the
+check. No file contents are read by the fast-path classifier.
+
+`grep`, `find`, `ls`, custom tools, and Bash commands such as `cat` still go
+through review. In particular, recursive searches can traverse sensitive files
+and cannot be approved merely by checking their starting directory.
+
 ## Behavior
 
-- **Every model-issued tool call is reviewed**, including read-only and custom
-  tools; there is no fast allowlist in this initial adapter. Nested calls routed
-  through Pi's normal tool execution hooks are reviewed too.
+- Model-issued tool calls go through the review gate, with the ordinary project
+  `read` fast path above and the UI-only question tool as exceptions. Nested
+  calls routed through Pi's normal tool execution hooks follow the same policy.
 - The shared emergency brake runs before the model. The reviewer receives the
   normalized request, bounded transcript and user-intent history, and the shared
   tenant policy. Conversation evidence includes tool calls and tool-result text
