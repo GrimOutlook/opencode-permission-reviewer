@@ -1,0 +1,98 @@
+# Experimental Pi adapter
+
+The `./pi` entry point adapts the existing reviewer to Pi 1.4.0. OpenCode's
+entry points remain unchanged. This is a basic port, not feature parity and
+not an OS sandbox.
+
+## Try the feature branch
+
+From this repository:
+
+```sh
+bun install
+bun run build
+pi -e /absolute/path/to/opencode-permission-reviewer/dist/pi.js
+```
+
+For development, `pi -e /absolute/path/to/opencode-permission-reviewer/src/pi/index.ts`
+also works. Load only one of these entries. The package's `pi.extensions`
+manifest points at the built entry for package installation.
+
+## Personal configuration
+
+Create `~/.pi/agent/permission-reviewer.json` (strict JSON, not JSONC):
+
+```json
+{
+  "model": "openai/your-reviewer-model",
+  "timeoutMs": 30000,
+  "escalationMode": "manual",
+  "audit": true
+}
+```
+
+Omit `model` to use the current Pi model. An explicit model must be registered
+in Pi as `provider/model` and uses Pi's authentication. No OpenCode server or
+credentials are required. Project configuration and OpenCode configuration
+are deliberately not loaded. Malformed personal configuration blocks calls.
+
+Existing reviewer options such as `policy`, `riskPolicy`, and context limits
+are supported. Output is always JSON in text mode. OpenCode-specific options
+such as reviewer-session retention, `variant`, ask-decision capture, and actor
+profiles do not have Pi equivalents in this first pass. Declarative
+`policyRules` and `enforcementMode: "enforce"` are rejected rather than silently
+ignored because their required evidence is not implemented.
+
+## Behavior
+
+- **Every model-issued tool call is reviewed**, including read-only and custom
+  tools; there is no fast allowlist in this initial adapter. Nested calls routed
+  through Pi's normal tool execution hooks are reviewed too.
+- The shared emergency brake runs before the model. The reviewer receives the
+  normalized request, bounded transcript and user-intent history, and the shared
+  tenant policy. Tool results and images are not included in conversation history.
+- The reviewer is a separate, tool-free model request, not a child agent. It
+  cannot execute tools and its output is not appended to the primary transcript.
+- The existing structured decision parser and risk/authorization/confidence
+  gates determine automatic approval. Invalid/truncated output, errors, and
+  timeouts escalate rather than auto-approve.
+- Manual escalation uses Pi's confirmation UI when available. `escalationMode:
+"deny"` or an unavailable UI denies escalation. Explicit reviewer denials and
+  emergency-brake denials do not offer an override in this extension.
+- Tool calls are serialized to avoid overlapping confirmation dialogs. A
+  cancelled call cannot be released by a late reviewer response. The provider
+  is aborted on timeout, with an independent timeout race in case it ignores
+  cancellation.
+- Each completed review appears in the **main transcript** with its final
+  allow/deny outcome, tool name, reason, elapsed time, decision source, and
+  risk/confidence when available. Fail-closed configuration and audit errors
+  also appear there. Results are persisted as display-only session entries,
+  so they remain visible on resume without entering the model's context or
+  triggering another turn. Secrets and terminal control sequences are removed
+  from displayed text.
+- Audit records default to `~/.pi/agent/permission-reviewer-audit.jsonl`, using
+  the shared private-file writer. Audit write failure blocks execution when
+  auditing is enabled.
+
+## Limitations
+
+No SSH/Git/local-script enrichment, actor/delegation lineage, ask-decision
+capture, status overlay, review-history UI, persistent session approvals, or
+reviewer usage aggregation has been ported yet. Treat missing evidence
+conservatively. The full OpenCode review coordinator is not used; the Pi gate
+shares its lower-level prompt, parsing, risk gates, emergency brake, redaction,
+and audit components.
+
+Approval hooks are guardrails, not containment: they do not mediate direct
+operations performed by trusted extensions, and this entry does not intercept
+user-entered `!`/`!!` shell commands. Other loaded extensions are trusted code;
+do not assume a tool gate protects against them. Use OS isolation for a hard
+filesystem/network boundary.
+
+## Verification
+
+`tests/pi.test.ts` exercises request normalization, shared decision gates,
+successful approval, provider failures, malformed/truncated output, and
+cancellation using a fake Pi host. `tests/pi-results.test.ts` covers result
+redaction and transcript rendering, including narrow terminal widths. Live provider/UI behavior still needs a
+manual smoke test in Pi; the automated suite does not contact a model provider.

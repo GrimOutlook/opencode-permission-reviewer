@@ -1,5 +1,8 @@
 # OpenCode Permission Reviewer
 
+An experimental **Pi adapter** is also available on this branch. See
+[PI.md](./PI.md) for setup, configuration, and current limitations.
+
 > [!NOTE]
 > This is an **unofficial community plugin** for OpenCode. It is not affiliated
 > with or endorsed by [Anomaly](https://anoma.ly).

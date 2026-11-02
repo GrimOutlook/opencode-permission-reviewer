@@ -7,6 +7,7 @@ export default defineConfig({
   entry: {
     index: "src/index.ts",
     explain: "src/cli/explain.ts",
+    pi: "src/pi/index.ts",
   },
   format: ["esm"],
   platform: "node",
@@ -23,6 +24,8 @@ export default defineConfig({
     },
   },
   external: [
+    "@earendil-works/pi-coding-agent",
+    "@earendil-works/pi-tui",
     "@opencode-ai/plugin",
     "@opencode-ai/plugin/tui",
     "@opencode-ai/sdk",
