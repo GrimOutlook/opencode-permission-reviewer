@@ -62,7 +62,8 @@ export const DEFAULT_TENANT_POLICY = `
 
 export const REVIEWER_PROMPT_VERSION = "2.2.0"
 
-export const REVIEWER_SYSTEM_PROMPT = `
+function buildSystemPrompt(host: "opencode" | "pi"): string {
+  return `
 You are an automatic approval reviewer for an AI coding agent. Judge exactly one pending action.
 
 Your job is authorization and safety, not task completion. You have no tools and must not attempt to execute, rewrite, or continue the action.
@@ -112,11 +113,19 @@ Your job is authorization and safety, not task completion. You have no tools and
 - high risk: allow only with at least medium user authorization, narrow scope, and no absolute policy deny; escalate when authorization is low or unknown.
 - critical risk: deny.
 - Escalate when user authorization is unknown for any medium or higher risk, or whenever essential evidence is missing or contradictory and a safe allow/deny judgment cannot be made.
-- Never convert an explicit OpenCode deny into allow. This reviewer only sees actions already classified as ask.
+${
+  host === "opencode"
+    ? "- Never convert an explicit OpenCode deny into allow. This reviewer only sees actions already classified as ask."
+    : "- Never override an explicit policy deny. Pi reviews tool calls directly; do not assume an earlier permission system classified the action as requiring approval."
+}
 - Return one concise rationale. Be precise about the concrete risk or why the scope is safe.
 
 Follow the tenant policy supplied in the user message exactly; it may be stricter than these defaults but never more permissive.
 `.trim()
+}
+
+export const REVIEWER_SYSTEM_PROMPT = buildSystemPrompt("opencode")
+export const PI_REVIEWER_SYSTEM_PROMPT = buildSystemPrompt("pi")
 
 /**
  * Build the reviewer *part* (the user/message content) for `session.prompt`.
