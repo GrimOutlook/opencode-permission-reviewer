@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -54,6 +57,8 @@ function harness(
     () => handler({ toolCallId: "call", toolName: "read", input: { path: "README.md" } }, ctx),
     {
       entries,
+      tool: (toolName: string, input: Record<string, unknown>) =>
+        handler({ toolCallId: "call", toolName, input }, ctx),
       command: (args: string) =>
         command(args, {
           ...ctx,
@@ -129,6 +134,57 @@ describe("Pi adapter", () => {
     expect(content[0]?.text).toContain("Screenshot evidence")
     expect(content[0]?.text).toContain("role=toolResult")
     expect(content[0]?.text).not.toContain(image.data)
+  })
+  test("inspects local scripts without executing them and confines evidence to the workspace", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-script-inspection-"))
+    const workspace = join(root, "workspace")
+    const outside = join(root, "outside")
+    try {
+      await mkdir(workspace)
+      await mkdir(outside)
+      await mkdir(join(workspace, "scripts"))
+      const marker = join(workspace, "executed")
+      const script = `from pathlib import Path\nPath(${JSON.stringify(marker)}).touch()\nprint("INSPECTED_SCRIPT")\n`
+      await writeFile(join(workspace, "scripts/task.py"), script)
+      await writeFile(join(outside, "private.py"), 'print("OUTSIDE_SECRET")')
+      let evidence = ""
+      const run = harness(async () => ({}), {
+        cwd: workspace,
+        modelRegistry: {
+          complete: async (
+            _model: unknown,
+            context: { messages: Array<{ content: Array<{ text?: string }> }> },
+          ) => {
+            evidence = context.messages[0]!.content[0]!.text!
+            return { stopReason: "stop", content: [{ type: "text", text: verdict }] }
+          },
+        },
+      })
+      expect(await run.tool("bash", { command: "cd scripts && python3 task.py" })).toBeUndefined()
+      expect(evidence).toContain("LOCAL_SCRIPT_ANALYSIS")
+      expect(evidence).toContain("INSPECTED_SCRIPT")
+      expect(evidence).not.toContain("sk-proj-abcdefghijklmnopqrstuvwxyz1234567890")
+      expect(await Bun.file(marker).exists()).toBe(false)
+      await writeFile(
+        join(workspace, "scripts/task.py"),
+        script + "# token=sk-proj-abcdefghijklmnopqrstuvwxyz1234567890\n",
+      )
+      expect(await run.tool("bash", { command: "python3 scripts/task.py" })).toBeUndefined()
+      expect(evidence).toContain("possible literal credential or private key")
+      expect(evidence).not.toContain("sk-proj-abcdefghijklmnopqrstuvwxyz1234567890")
+      expect(
+        await run.tool("bash", { command: `cd ${outside} && python3 private.py` }),
+      ).toBeUndefined()
+      expect(evidence).toContain("outside approved enrichment roots")
+      expect(evidence).not.toContain("OUTSIDE_SECRET")
+      expect(await run.tool("bash", { command: "python3 missing.py" })).toBeUndefined()
+      expect(evidence).toContain("LOCAL_SCRIPT_ANALYSIS")
+      expect(evidence).toContain("missing")
+      expect(await run.tool("bash", { command: 'python3 -c "print(1)"' })).toBeUndefined()
+      expect(evidence).not.toContain("\nLOCAL_SCRIPT_ANALYSIS\n")
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
   test("displays fail-closed errors in the transcript", async () => {
     const run = harness(

@@ -73,6 +73,16 @@ reason in the main transcript; `deny` also returns it as the tool's error.
   with tool names, call IDs, and error/completion status. Tool output remains
   untrusted evidence, not user authorization; text uses the existing redaction
   and truncation limits.
+- Bash commands that name an explicit local interpreter script (Python, Node,
+  Bun, shell, Ruby, or Perl) get the shared read-only local-script inspection.
+  Evidence includes bounded script content, a hash, and static capability
+  signals. Relative paths follow parsed `cd` commands, but approved roots remain
+  the original Pi working directory. Sensitive paths, binary files, and symlinks
+  escaping that root are not included. Inline code, module execution, stdin,
+  and dynamic paths are not treated as explicit script files. Missing or blocked
+  scripts are marked in the evidence, not automatically approved or denied.
+  Scripts are never executed by the inspector. Content uses existing redaction
+  and `maxEnrichmentChars` limits.
 - Recent user and tool-result images are attached as actual image blocks when
   the reviewer model advertises image support. Source-message labels link them
   to the text transcript. At most four images are forwarded, with base64 payload
@@ -107,7 +117,7 @@ reason in the main transcript; `deny` also returns it as the tool's error.
 
 ## Limitations
 
-No SSH/Git/local-script enrichment, actor/delegation lineage, ask-decision
+No SSH/Git enrichment, actor/delegation lineage, ask-decision
 capture, status overlay, review-history UI, persistent session approvals, or
 reviewer usage aggregation has been ported yet. Treat missing evidence
 conservatively. The full OpenCode review coordinator is not used; the Pi gate
