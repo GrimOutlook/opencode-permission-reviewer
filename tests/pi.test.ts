@@ -387,6 +387,14 @@ describe("Pi adapter", () => {
             return {
               stopReason: "stop",
               content: [{ type: "text", text: options.length === 1 ? "invalid" : verdict }],
+              usage: {
+                input: 100,
+                output: 20,
+                cacheRead: 0,
+                cacheWrite: 0,
+                totalTokens: 120,
+                reasoning: 5,
+              },
             }
           },
         },
@@ -397,6 +405,14 @@ describe("Pi adapter", () => {
     expect(options).toHaveLength(2)
     expect(options[0]?.reasoning).toBe("high")
     expect(options[1]?.reasoning).toBe("high")
+    expect(run.entries.at(-1)?.data.usage).toMatchObject({
+      input: 200,
+      output: 40,
+      totalTokens: 240,
+      reasoning: 10,
+      attempts: 2,
+      reportedAttempts: 2,
+    })
   })
   test("live progress shows evidence and retry phases and clears on completion or failure", async () => {
     for (const fail of [false, true]) {

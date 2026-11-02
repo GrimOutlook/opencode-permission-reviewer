@@ -16,6 +16,7 @@ import { publishResult, registerResultRenderer } from "./results.ts"
 import { registerReviewerCommands } from "./commands.ts"
 import { conversationEvidence } from "./conversation.ts"
 import { reviewerReasoning } from "./reasoning.ts"
+import { ReviewUsage } from "./usage.ts"
 import { startReviewProgress, observeReviewStream, type ReviewProgress } from "./progress.ts"
 import { registerActorContext, resolvePiActor, type PiActorContext } from "./actor.ts"
 import { resolveActionPurpose } from "../context/action-purpose.ts"
@@ -103,6 +104,7 @@ async function review(
   actorContexts: ReadonlyMap<string, PiActorContext>,
   capturedAsks: PiAskDecisions,
   progress: ReviewProgress,
+  usage: ReviewUsage,
 ): Promise<PiExecutionResult> {
   progress("Checking emergency brake")
   const brake = emergencyBrakeReason(request)
@@ -189,6 +191,7 @@ async function review(
     const complete = async (retry: boolean): Promise<string> => {
       if (controller.signal.aborted) throw new Error("Tool call cancelled")
       progress(`${retry ? "Retrying malformed decision" : "Waiting for reviewer"} — ${model.id}`)
+      usage.startAttempt()
       const response = await Promise.race([
         observeReviewStream(
           ctx.modelRegistry.streamSimple(
@@ -239,6 +242,7 @@ async function review(
         }),
       ])
       clearTimeout(timer)
+      usage.add(response.usage)
       if (controller.signal.aborted || response.stopReason !== "stop")
         throw new Error("Reviewer did not complete successfully")
       return response.content
@@ -282,6 +286,7 @@ export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerC
     await previous
     const start = performance.now()
     let mode: EscalationMode | undefined
+    const usage = new ReviewUsage()
     let live: ReturnType<typeof startReviewProgress> = { update: () => {}, stop: () => {} }
     try {
       live = startReviewProgress(ctx, event.toolName)
@@ -297,7 +302,7 @@ export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerC
       let result: PiExecutionResult
       try {
         if (ctx.signal?.aborted) throw new Error("Tool call cancelled")
-        result = await review(request, ctx, config, actorContexts, capturedAsks, live.update)
+        result = await review(request, ctx, config, actorContexts, capturedAsks, live.update, usage)
       } catch (error) {
         result = {
           kind: "escalate",
@@ -351,7 +356,14 @@ export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerC
             }
           : {}),
       })
-      publishResult(pi, event.toolName, event.toolCallId, result, performance.now() - start, mode)
+      publishResult(
+        pi,
+        event.toolName,
+        event.toolCallId,
+        { ...result, usage: usage.snapshot() },
+        performance.now() - start,
+        mode,
+      )
       if (result.kind !== "allow")
         return { block: true, reason: `Permission reviewer: ${result.reason}` }
       return undefined
@@ -361,7 +373,7 @@ export function registerPiReviewer(pi: ExtensionAPI, loadConfig: () => ReviewerC
         pi,
         event.toolName,
         event.toolCallId,
-        { kind: "deny", reason, decisionSource: "failure-safe" },
+        { kind: "deny", reason, decisionSource: "failure-safe", usage: usage.snapshot() },
         performance.now() - start,
         mode,
       )

@@ -41,6 +41,15 @@ test("renderer shows outcome, risk, confidence, and reason at narrow widths", ()
   )
   result.risk = "low"
   result.confidence = 0.95
+  result.usage = {
+    input: 100,
+    output: 20,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 120,
+    attempts: 1,
+    reportedAttempts: 1,
+  }
   const component = renderer(
     { data: result } as Parameters<typeof renderer>[0],
     {} as Parameters<typeof renderer>[1],
@@ -51,6 +60,7 @@ test("renderer shows outcome, risk, confidence, and reason at narrow widths", ()
   expect(wide).toContain("risk: low")
   expect(wide).toContain("confidence: 95%")
   expect(wide).toContain("Explicitly requested")
+  expect(wide).toContain("tokens: 120 total (100 in / 20 out)")
   for (const line of component.render(20)) expect(visibleWidth(line)).toBeLessThanOrEqual(20)
   result.source = "manual-superseded"
   const human = renderer(

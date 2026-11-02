@@ -204,14 +204,21 @@ UI-only and is not appended to model context or session history.
   so they remain visible on resume without entering the model's context or
   triggering another turn. Secrets and terminal control sequences are removed
   from displayed text.
+- Final results include provider-reported token usage: total, input/output,
+  cache reads/writes, and reasoning tokens when reported (already included in
+  output, never added twice). Counts include both attempts on a corrective retry.
+  No-model-call blocks show zero; absent usage is shown as unavailable rather
+  than guessed. If only some attempts report usage, totals are marked partial.
+  Counts persist with the display-only result, but are not added to Pi's native
+  session usage totals or the audit schema.
 - Audit records default to `~/.pi/agent/permission-reviewer-audit.jsonl`, using
   the shared private-file writer. Audit write failure blocks execution when
   auditing is enabled.
 
 ## Limitations
 
-No native cross-extension subagent discovery, review-history UI, persistent session approvals, or
-reviewer usage aggregation has been ported yet. Treat missing evidence
+No native cross-extension subagent discovery, review-history UI, persistent session approvals,
+or integration into Pi's native session usage totals has been ported yet. Treat missing evidence
 conservatively. The full OpenCode review coordinator is not used; the Pi gate
 shares its lower-level prompt, parsing, risk gates, emergency brake, redaction,
 and audit components.

@@ -3,6 +3,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Text } from "@earendil-works/pi-tui"
 import { redactSecrets } from "../redact.ts"
 import type { EscalationMode, ReviewExecutionResult } from "../types.ts"
+import { formatReviewUsage, type PiReviewUsage } from "./usage.ts"
+
+export type PiResultWithUsage = ReviewExecutionResult & { usage?: PiReviewUsage }
 
 export const PI_REVIEW_RESULT = "permission-reviewer.result"
 
@@ -16,6 +19,7 @@ export interface PiReviewResult {
   mode?: EscalationMode
   risk?: string
   confidence?: number
+  usage?: PiReviewUsage
 }
 
 function displayText(text: string): string {
@@ -31,7 +35,7 @@ function displayText(text: string): string {
 export function reviewResultEntry(
   toolName: string,
   toolCallId: string,
-  result: ReviewExecutionResult,
+  result: PiResultWithUsage,
   durationMs: number,
   mode?: EscalationMode,
 ): PiReviewResult {
@@ -42,6 +46,7 @@ export function reviewResultEntry(
     reason: displayText(result.reason),
     durationMs,
     ...(mode ? { mode } : {}),
+    ...(result.usage ? { usage: result.usage } : {}),
     source: result.decisionSource ?? "failure-safe",
     ...(result.decision
       ? { risk: result.decision.risk_level, confidence: result.decision.confidence }
@@ -76,6 +81,7 @@ export function registerResultRenderer(pi: ExtensionAPI): void {
           `Permission reviewer: ${outcome} [on escalation: ${escalation}] — ${displayText(result.toolName)}`,
         ),
         theme.fg("muted", summary),
+        theme.fg("muted", formatReviewUsage(result.usage)),
         displayText(result.reason),
       ].join("\n"),
       1,
@@ -89,7 +95,7 @@ export function publishResult(
   pi: ExtensionAPI,
   toolName: string,
   toolCallId: string,
-  result: ReviewExecutionResult,
+  result: PiResultWithUsage,
   durationMs: number,
   mode?: EscalationMode,
 ): void {
