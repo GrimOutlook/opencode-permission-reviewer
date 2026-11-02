@@ -130,6 +130,42 @@ reviews keep their original mode. Explicit reviewer denials and emergency-brake
 blocks remain blocked in either mode. Both modes still display the result and
 reason in the main transcript; `deny` also returns it as the tool's error.
 
+## Aside questions while the task runs
+
+Use `/aside <question>` to ask a contextual side question **without waiting for
+the main tool call to finish**:
+
+```text
+/aside What is the current test run doing?
+/aside What does the last warning mean?
+/aside Why did we choose this approach?
+```
+
+A separate tool-free request uses the currently selected Pi model and its
+existing authentication. It receives bounded recent conversation text/tool
+results, the last few aside exchanges, and a timestamped snapshot of observed
+shell commands. Images are not forwarded. The gray aside answer is persisted as
+a display-only session entry: it does not enter the main agent's context,
+interrupt the command, or authorize/change the main task. Normal Enter/Alt+Enter
+messages keep Pi's normal queue behavior. To change the main task, use those
+normal messages rather than an aside.
+
+Plain `/aside` immediately shows running/awaiting-review commands, elapsed time,
+and a bounded tail of observed output, **without a model call**. If no commands
+are active, it shows the last three completed commands. Status tracks Pi's Bash
+and PowerShell tool events in the current session only; user-entered `!`/`!!`,
+remote worker processes, and commands started before reload are not discovered.
+The extension does not probe processes or execute diagnostic commands. No output
+does not establish a hang, and a model explanation describes its timestamped
+snapshot rather than claiming continuous observation.
+
+Aside questions work even when no shell command is active. They use a 30-second
+timeout, bounded output, and at most one in-flight question per session. A plain
+`/aside` snapshot remains available while an answer is pending. Model requests
+may incur additional cost and are not included in reviewer token counts. Reload
+or session replacement cancels pending aside answers and clears tracked status;
+late responses cannot be appended to a different session.
+
 ## Live progress
 
 Interactive Pi shows a transient gray panel above the editor while a review is
